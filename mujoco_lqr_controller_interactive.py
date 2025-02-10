@@ -82,6 +82,7 @@ def create_overlay(model,data):
        "Current Control Force",'%.2f' % force,
         )
 
+
 #HINT2: add the logics for key press here
 def keyboard(window, key, scancode, act, mods):
 
@@ -232,8 +233,8 @@ glfw.set_key_callback(window, keyboard)
 
 cam.azimuth = 90
 cam.elevation = -25
-cam.distance = 7
-cam.lookat = np.array([0.0, 0.0, 0])
+cam.distance = 6.75
+cam.lookat = np.array([0.0, 1.0, 0])
 
 
 sim_time = 0.0
