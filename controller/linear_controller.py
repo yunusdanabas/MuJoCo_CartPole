@@ -1,4 +1,4 @@
-# linear_controller.py
+# controller/linear_controller.py
 import jax
 import jax.numpy as jnp
 import optax

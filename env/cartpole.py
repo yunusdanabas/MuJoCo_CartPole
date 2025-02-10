@@ -1,4 +1,4 @@
-#cartpole.py
+# env/cartpole.py
 
 import jax
 import jax.numpy as jnp

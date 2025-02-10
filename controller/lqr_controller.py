@@ -1,4 +1,4 @@
-# lqr_controller.py
+# controller/lqr_controller.py
 import jax.numpy as jnp
 from jax.numpy.linalg import inv
 

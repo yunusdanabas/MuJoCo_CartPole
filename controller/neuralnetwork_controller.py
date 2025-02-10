@@ -1,4 +1,4 @@
-# file: models.py
+# controller/neuralnetwork_controller.py
 
 import equinox as eqx
 import jax
