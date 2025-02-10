@@ -1,0 +1,1 @@
+This repo implements cart-pole swing-up controllers using JAX and MuJoCo. It features linear, LQR, and neural network controllers trained with an energy‐shaping loss to swing up and stabilize the pole. It includes differentiable simulation and real-time visualization.
