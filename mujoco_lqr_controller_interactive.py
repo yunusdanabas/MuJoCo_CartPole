@@ -1,4 +1,4 @@
-# mujoco_lqr_controller.py
+# mujoco_lqr_controller_interactive.py
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
