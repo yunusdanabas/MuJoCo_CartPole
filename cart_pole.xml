@@ -1,0 +1,83 @@
+<mujoco model="YunusEmreDanabas_CartPole">
+    <option gravity="0 0 -9.81" timestep="0.01"/>
+    <worldbody>
+        <!-- Lighting and Ground -->
+        <light diffuse=".5 .5 .5" pos="0 0 20.0" dir="0 0 -1"/>
+        <geom type="plane" size="20 20 1.0" rgba="1 1 1 1.0" condim="1"/>
+
+        <!-- Cart Body -->
+        <body name="chasis" pos="0 0 0.45">
+            <!-- 
+                SLIDE JOINT for the cart along x-axis. 
+                If you want purely 1D motion, remove chasis_slider_z 
+                or fix it. 
+            -->
+            <joint name="chasis_slider_x" type="slide" axis="1 0 0"/>
+            <!--  <joint name="chasis_slider_z" type="slide" axis="0 0 1"/>  -->
+
+            <geom type="box" size="0.75 0.5 0.25" rgba="1 1 0.1 1" mass="1"/>
+
+            <!-- Right Front Wheel -->
+            <body name="right_front_wheel" pos="-0.75 -.60 -0.25">
+                <geom type="cylinder" size="0.20 0.1" rgba="0.2 0.2 0.2 1" euler="90 0 0" mass="1e-6" condim="1"/>
+                <joint name="right_front_wheel_joint" type="hinge" axis="0 1 0"/>
+            </body>
+
+            <!-- Right Rear Wheel -->
+            <body name="right_rear_wheel" pos="0.75 -.60 -0.25">
+                <geom type="cylinder" size="0.20 0.1" rgba="0.2 0.2 0.2 1" euler="90 0 0" mass="1e-6" condim="1"/>
+                <joint name="right_rear_wheel_joint" type="hinge" axis="0 1 0"/>
+            </body>
+
+            <!-- Left Front Wheel -->
+            <body name="left_front_wheel" pos="-0.75 .60 -0.25">
+                <geom type="cylinder" size="0.20 0.1" rgba="0.2 0.2 0.2 1" euler="90 0 0" mass="1e-6" condim="1"/>
+                <joint name="left_front_wheel_joint" type="hinge" axis="0 1 0"/>
+            </body>
+
+            <!-- Left Rear Wheel -->
+            <body name="left_rear_wheel" pos="0.75 .60 -0.25">
+                <geom type="cylinder" size="0.20 0.1" rgba="0.2 0.2 0.2 1" euler="90 0 0" mass="1e-6" condim="1"/>
+                <joint name="left_rear_wheel_joint" type="hinge" axis="0 1 0"/>
+            </body>
+
+            <!-- Pole -->
+            <body name="pole" pos="0 0 0.0" euler="0 0 180">
+                <!-- Hinge around the y-axis, range ±90 deg 
+                     (be aware MuJoCo typically uses radians) -->
+                <joint name="pole_hinge" type="hinge" pos="0 0 0.0" axis="0 1 0" limited="false"/>
+                <geom type="capsule" size="0.06" fromto="0 0 0 0 0 1.0" rgba="0.4 0.4 0.8 1" mass="1e-6" friction="0 0 0"/>
+                <site name="pole_tip" pos="0 0 1.0"/>
+
+                <!-- Mass on the Pole -->
+                <body name="mass" pos="0 0 1.0">
+                    <geom type="sphere" size="0.2" rgba="0.2 0.2 0.2 1" euler="0 0 0" mass="1.0" condim="1"/>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+
+    <!-- Sensors -->
+    <sensor>
+        <jointpos joint="chasis_slider_x" name="cart_position"/>
+        <jointvel joint="chasis_slider_x" name="cart_velocity"/>
+        <jointpos joint="pole_hinge" name="pole_angle"/>
+        <jointvel joint="pole_hinge" name="pole_angular_velocity"/>
+    </sensor>
+
+    <!-- Actuators -->
+    <actuator>
+        <!-- Use a 'motor' if you want direct force control on the cart.
+             If you prefer a position servo, you can do <position kp="100">, 
+             but then data.ctrl[0] is a position target, not a force. -->
+        <motor joint="chasis_slider_x" name="cart_force" ctrllimited="true" ctrlrange="-10 10"/>
+        <motor joint="pole_hinge" name="pole_torque" ctrllimited="true" ctrlrange="-5 5"/>
+    </actuator>
+
+    <contact>
+        
+        <exclude name="pole_ground_exclude" body1="world" body2="pole"/>
+        <exclude name="mass_ground_exclude" body1="world" body2="mass"/>
+       
+    </contact>
+</mujoco>
