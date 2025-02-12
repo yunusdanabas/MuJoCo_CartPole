@@ -125,7 +125,7 @@ The physical system is modeled as follows:
 
 Install the required packages via pip:
 ```bash
-pip install jax jaxlib equinox optax diffrax mujoco mujoco_viewer matplotlib numpy
+pip install jax jaxlib equinox optax diffrax mujoco matplotlib numpy
 ```
 Make sure MuJoCo is installed and licensed correctly on your system.
 
