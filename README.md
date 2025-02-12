@@ -1,128 +1,157 @@
 # Cart-Pole Swing-Up Control with JAX and MuJoCo
 
-This repository implements controllers for the classic cart-pole swing-up task using both classical control methods and modern deep-learning techniques. We train a neural network controller via differentiable simulation to swing up the pole from a downward or arbitrary configuration to near upright—so that a simpler linear/LQR controller can take over stabilization. Real-time simulations are performed with MuJoCo and mujoco_viewer.
+This repository implements controllers for the classic cart-pole swing-up task using both classical control methods and modern deep-learning techniques. We train a neural network controller via differentiable simulation to swing up the pole from a downward (or arbitrary) configuration to near upright—so that a simpler linear/LQR controller can later stabilize it. Real-time simulations are performed with MuJoCo and mujoco_viewer. 
+
+For a complete discussion of the methodology, experiments, and results, please see our final report (ME58006_Project2.pdf) included in this repository.
 
 ---
 
 ## Overview
 
-The cart-pole system consists of a cart moving horizontally along a track and a pole hinged to the cart. The physical objective is to use control forces applied to the cart to “pump” the pole, accumulating enough kinetic and potential energy to drive it to the upright equilibrium while keeping the cart near the center (x = 0). This project compares several approaches:
+The cart-pole system comprises a cart that moves along a horizontal track and a pole hinged to the cart that can swing freely. Our objective is to design a controller that “pumps” energy into the system so that the pole reaches an upright equilibrium while keeping the cart near the center (x = 0). We compare several approaches:
 
-- **Linear Controller:** Trained in a differentiable JAX simulation with a quadratic cost.
-- **LQR Controller:** Derived from a linearization of the nonlinear dynamics.
-- **Neural Network Controller:** An MLP policy trained with an energy-shaping plus cart-deviation cost function.
-
----
-
-## Techniques & Libraries
-
-- **JAX:** Provides automatic differentiation and JIT compilation.
-- **Equinox:** Used to build and manage our neural network modules in a functional style.
-- **Optax:** Supplies gradient-based optimizers for training our neural network.
-- **Diffrax:** Enables differentiable ODE integration for rollout simulations.
-- **MuJoCo & mujoco_viewer:** Deliver high-fidelity physics simulation and real-time interactive visualization.
-- **Classical Control Methods:** Linear and LQR controllers for baseline performance and comparison.
+- **Linear Controller:**  
+  A controller trained in a differentiable JAX simulation using a quadratic cost on the state and control effort.
+  
+- **LQR Controller:**  
+  A controller derived from a linearization of the nonlinear dynamics, computed via the algebraic Riccati equation.
+  
+- **Neural Network Controller:**  
+  An MLP (multi-layer perceptron) policy trained via differentiable simulation with an energy-shaping plus cart-deviation cost. The NN takes a 5D state \([x, \cos\theta, \sin\theta, \dot{x}, \dot{\theta}]\) as input and outputs a scalar force to swing up the pole.
 
 ---
 
 ## Physical System & Objectives
 
-The physical system is a cart-pole, where:
-- The **cart** (mass \(M\)) moves along a horizontal track.
-- The **pole** (mass \(m\) and length \(l\)) swings about a hinge on the cart.
-- The goal is to swing up the pole from a downward (or arbitrary) state to an upright state.
-- We measure the state as \([x, \cos\theta, \sin\theta, \dot{x}, \dot{\theta}]\) to avoid discontinuities.
-- Our NN cost function penalizes the squared difference between the current total energy (kinetic plus potential) and the desired energy for the upright configuration, plus a penalty for cart deviation from zero and large control forces.
+The physical system is modeled as follows:
+
+- **Cart:**  
+  The cart (mass \(M\)) moves horizontally. Its position \(x\) should remain near zero to prevent instability.
+  
+- **Pole:**  
+  The pole (mass \(m\) and length \(l\)) is attached by a hinge. The angle \(\theta\) is represented via its sine and cosine to avoid discontinuities. For the swing-up, the controller must inject enough energy so that the total mechanical energy (kinetic plus potential) reaches the desired level—typically,  
+  \[
+  E_{\text{des}} = 2\,m\,g\,l,
+  \]  
+  corresponding to the difference between the hanging and upright configurations.
+  
+- **Objective:**  
+  Train the controller so that, starting from various (possibly challenging) initial conditions, the system is driven to near the upright equilibrium. Once there, a simpler LQR (or linear) controller can take over to achieve fine stabilization.
+
+---
+
+## Techniques & Libraries
+
+- **JAX:**  
+  Provides automatic differentiation and JIT compilation for efficient computation.
+  
+- **Equinox:**  
+  A lightweight neural network library used to define and manage our MLP controller.
+  
+- **Optax:**  
+  Supplies gradient-based optimizers (e.g., Adam) to train the neural network.
+  
+- **Diffrax:**  
+  Enables differentiable ODE integration, which is critical for rollout-based cost evaluation during training.
+  
+- **MuJoCo & mujoco_viewer:**  
+  High-fidelity physics simulation and real-time visualization of the cart-pole system.
+  
+- **Classical Control Methods:**  
+  Linear and LQR controllers are implemented for baseline performance and comparison.
 
 ---
 
 ## Project Structure
 
 - **`controller/`**  
-  - `linear_controller.py`: Implements a linear controller and its training routine.  
-  - `lqr_controller.py`: Contains functions to linearize the cart-pole system and compute the LQR gain.  
-  - `neuralnetwork_controller.py`: Defines the MLP (or CartPolePolicy) used for neural network control.
+  - `linear_controller.py`: Implements the linear controller and its training routine.  
+  - `lqr_controller.py`: Contains functions for linearizing the cart-pole system and computing the LQR gain matrix.  
+  - `neuralnetwork_controller.py`: Defines the MLP (or `CartPolePolicy`) used for neural network control.
   
 - **`env/`**  
-  - `cartpole.py`: Contains the nonlinear dynamics of the cart-pole.  
+  - `cartpole.py`: Contains the nonlinear cart-pole dynamics.  
   - `closedloop.py`: Provides a wrapper for closed-loop simulation using Diffrax.
   
 - **`lib/`**  
   - `trainer.py`: Implements the training loop for the neural network controller using an energy-shaping plus cart-deviation loss.  
-  - `utils.py`: Contains utility functions for sampling initial conditions and plotting trajectories, energies, and costs.
+  - `utils.py`: Contains helper functions for sampling initial conditions and plotting trajectories, energies, and costs.
   
 - **Main Scripts:**  
-  - `main_linear_only.py`: Trains and simulates the linear controller and LQR in a JAX environment.  
-  - `mujoco_lqr_controller_interactive.py`: Runs an interactive LQR controller in MuJoCo (with overlays, etc.).  
-  - `mujoco_linear_control.py`: Implements the trained linear controller in MuJoCo.  
-  - `nn_mujoco.py`: Runs the neural network (NN) controller in MuJoCo.  
-  - `train_nn_controller.py`: Trains the NN controller using differentiable simulation and rollout cost minimization.
+  - `main_linear_only.py`: Trains and tests the linear controller and LQR in the JAX simulation environment.  
+  - `mujoco_lqr_controller_interactive.py`: Runs an interactive LQR controller in MuJoCo with overlays and keyboard controls.  
+  - `mujoco_linear_control.py`: Implements the trained linear controller in a MuJoCo simulation.  
+  - `nn_mujoco.py`: Deploys the trained neural network controller in MuJoCo.  
+  - `train_nn_controller.py`: Trains the neural network controller using differentiable simulation and rollout cost minimization.
+
+- **Additional Files:**  
+  - `ME58006_Project2.pdf`: A final report detailing the project methodology, experiments, and results.  
+  - `mujoco_lqr_controller_interactive.png`: A screenshot from the interactive LQR simulation.
 
 ---
 
 ## How It Works
 
 1. **Differentiable Simulation & Training:**  
-   - We simulate the cart-pole dynamics using Diffrax.  
-   - A cost function penalizes deviations of the system’s energy from the desired upright energy, deviations of the cart position from zero, and excessive control force.
-   - The NN (an MLP) is trained via gradient descent (using Optax) to minimize this cost across multiple rollout simulations from random initial conditions.
+   The training process uses Diffrax to simulate the cart-pole dynamics over a fixed time horizon. The cost function penalizes the squared error between the current energy (kinetic plus potential) and the desired energy for the upright state, along with deviations of the cart from the center and excessive control force. The neural network controller is then trained using gradient descent (via Optax).
 
 2. **Neural Network Policy:**  
-   - The policy receives a 5D state \([x, \cos\theta, \sin\theta, \dot{x}, \dot{\theta}]\) and outputs a scalar control force.
-   - The training objective is to “pump” the energy into the pole until it reaches near-upright, while keeping the cart near the center.
+   The MLP receives a 5D state \([x, \cos\theta, \sin\theta, \dot{x}, \dot{\theta}]\) and outputs a force. The training objective is designed to drive the system to a state with the desired energy level while keeping the cart’s position near zero.
 
 3. **Classical Controllers:**  
-   - In parallel, a linear controller and an LQR controller are implemented for comparison. The LQR is computed from a linearized model of the system.
+   In parallel, a linear controller (trained in a differentiable environment) and an LQR controller (obtained by linearizing the system dynamics) are implemented for comparison.
 
 4. **Real-Time Simulation with MuJoCo:**  
-   - Controllers are deployed in MuJoCo for high-fidelity simulation and visualization.  
-   - The interactive LQR script includes overlays (e.g., current disturbance force) and real-time keyboard controls.
+   The trained controllers are deployed in MuJoCo for high-fidelity, real-time simulation. Interactive scripts (such as the one using LQR with overlays) allow users to visualize disturbances, adjust parameters via keyboard, and observe the system’s behavior.
 
 ---
 
 ## Screenshot
 
 ![LQR Interactive](mujoco_lqr_controller_interactive.png)  
-*Screenshot from `mujoco_lqr_controller_interactive.py` showing the interactive MuJoCo simulation with control overlays.*
+*Screenshot from the interactive LQR simulation showing real-time control overlays and disturbance information.*
 
 ---
 
 ## Installation & Requirements
 
 - **Python 3.8+**
-- **JAX** (CPU/GPU version as needed)
+- **JAX** (with CPU or GPU support)
 - **Equinox**
 - **Optax**
 - **Diffrax**
 - **MuJoCo 3.x** and **mujoco_viewer**
 - **Matplotlib** and **NumPy**
 
-Install required packages via pip:
+Install the required packages via pip:
 ```bash
 pip install jax jaxlib equinox optax diffrax mujoco mujoco_viewer matplotlib numpy
 ```
-Also, ensure MuJoCo is installed and licensed.
+Make sure MuJoCo is installed and licensed correctly on your system.
 
 ---
 
 ## Usage
 
-- **Training the NN Controller:**  
-  Run `train_nn_controller.py` to train the neural network controller for swing-up.
-  
-- **Testing & Simulation:**  
-  Use `main_linear_only.py`, `mujoco_lqr_controller_interactive.py`, `mujoco_linear_control.py`, and `nn_mujoco.py` to test various controllers in simulation.
+- **Training:**  
+  Run `train_nn_controller.py` to train the neural network controller for the swing-up task. The trained model is saved as `trained_nn_model.eqx`.
+
+- **Simulation & Testing:**  
+  Use the provided scripts (`main_linear_only.py`, `mujoco_lqr_controller_interactive.py`, `mujoco_linear_control.py`, `nn_mujoco.py`) to simulate and compare the performance of the different controllers in both differentiable and real-time MuJoCo environments.
 
 - **Visualization:**  
-  Utility functions in `lib/utils.py` provide tools to plot trajectories, energy profiles, and control costs.
+  Utility functions in `lib/utils.py` enable plotting of trajectories, energy profiles, and cost comparisons.
+
+- **Final Report:**  
+  Refer to `Final_Report.pdf` for a comprehensive discussion of the methodology, experimental setup, and results.
 
 ---
 
 ## Future Work
 
 - **Controller Handoff:**  
-  Integrate a switching mechanism to hand over to an LQR controller when the system is near upright.
-- **Advanced Cost Functions:**  
-  Experiment with additional loss terms or phase-based training strategies.
-- **Robustness:**  
-  Enhance performance under disturbances and across a wider range of initial conditions.
+  Develop a mechanism to switch from the NN controller to an LQR controller once the system reaches near-upright.
+- **Enhanced Cost Functions:**  
+  Experiment with additional or phase-based loss terms.
+- **Robustness Testing:**  
+  Further test the controllers under various disturbances and initial conditions.
