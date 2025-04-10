@@ -1,77 +1,119 @@
-# file: train_nn_controller.py
+# main.py
 
-import jax.random as rnd
+import os
+import jax
 import jax.numpy as jnp
-import numpy as np
-import matplotlib.pyplot as plt
 import equinox as eqx
+import optax
+import matplotlib.pyplot as plt
+from controller.neuralnetwork_controller import CartPoleNN
+from lib.trainer import train_nn_controller, evaluate_controller
+from lib.utils import *
 
-from controller.neuralnetwork_controller import CartPolePolicy
-from lib.trainer import train_nn_controller, rollout_once
-from lib.utils import plot_trajectories3, plot_cost, sample_initial_conditions
-
+# Configuration
+MODEL_SAVE_PATH = "saved_models/nn_controller.eqx"
+PARAMS_SYSTEM = (1.0, 0.1, 0.5, 9.81)  # (mc, mp, l, g)
+Q_MATRIX = jnp.diag(jnp.array([0.1, 10.0, 10.0, 0.1, 0.1]))  # 5D state weights
+TRAIN_CONFIG = {
+    'num_epochs': 500,
+    'batch_size': 32,
+    't_span': (0.0, 10.0),
+    't_eval': jnp.linspace(0, 10, 100),
+    'learning_rate': 3e-4,
+    'grad_clip': 1.0
+}
 
 def main():
-    # 1) System parameters
-    mc = 1.0
-    mp = 1.0
-    l = 1.0
-    g = 9.81
-    params = (mc, mp, l, g)
+    # Initialize everything
+    key = jax.random.PRNGKey(42)
+    
+    # Create model directory if needed
+    os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
+    
+    # Initialize controller
+    controller = CartPoleNN(key=key)
+    print("Initialized new neural network controller")
 
-    # 2) Create random key & instantiate the NN policy
-    key = rnd.PRNGKey(31)
-    model_key, _ = rnd.split(key)
-    # Let's specify hidden_dims if you want more layers
-    nn_policy = CartPolePolicy(model_key, in_dim=5, hidden_dims=(64, 128, 64), out_dim=1)
-
-    # 3) Train
-    print("Training")
-    trained_policy, cost_history = train_nn_controller(
-        nn_policy,
-        params=params,
-        num_iterations=3_000,
+    # Train the controller
+    print("\nStarting training...")
+    trained_controller, loss_history = train_nn_controller(
+        controller=controller,
+        params_system=PARAMS_SYSTEM,
+        Q=Q_MATRIX,
+        num_epochs=500,
         batch_size=32,
-        T=7.0,
-        dt=0.01,
-        lr=1e-4,
-        key=key
+        t_span=(0.0, 10.0),
+        t_eval=jnp.linspace(0, 10, 100),
+        key=key,
+        learning_rate=1e-4
+    )
+    
+    # Save trained model
+    eqx.tree_serialise_leaves(MODEL_SAVE_PATH, trained_controller)
+    print(f"\nSaved trained controller to {MODEL_SAVE_PATH}")
+
+    # Evaluate from downward position
+    initial_state = jnp.array([0.0, jnp.pi, 0.0, 0.0])  # Downward position
+    ts, states = evaluate_controller(
+        trained_controller,
+        PARAMS_SYSTEM,
+        initial_state,
+        t_span=TRAIN_CONFIG['t_span'],
+        t_eval=TRAIN_CONFIG['t_eval']
     )
 
-    # 4) Plot training cost
-    plot_cost(np.array(cost_history), title="NN Training Cost")
-
-    # 5) Test with an initial condition near downward: (x=0, theta=pi, etc.)
-    test_ic = jnp.array([0.0, jnp.pi, 0.0, 0.0])  # shape (4,) -> will convert to (5,) internally
-    total_cost, states, times, forces = rollout_once(trained_policy, params, test_ic, T=7.0, dt=0.01)
-    print(f"Test Rollout Cost: {float(total_cost):.4f}")
-
-    # 6) Extract theta from cos/sin
-    # states: shape (N, 5) = [x, cos_th, sin_th, x_dot, th_dot]
-    x_vals = states[:, 0]
-    cos_th = states[:, 1]
-    sin_th = states[:, 2]
-    x_dot_vals = states[:, 3]
-    th_dot_vals = states[:, 4]
-    theta = jnp.arctan2(sin_th, cos_th)
-
-    print("\nSample of final states:")
-    print("  x =", x_vals[-5:])
-    print("  theta =", theta[-5:])
-
-    # Quick plot of theta vs time
-    plt.figure()
-    plt.plot(times, theta, label="Theta (rad)")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Angle (rad)")
-    plt.title("Pendulum Angle (Theta) Over Time")
+    # Plot training progress
+    plt.figure(figsize=(10, 4))
+    plt.semilogy(loss_history)
+    plt.title("Training Loss Progress")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (log scale)")
     plt.grid(True)
-    plt.legend()
+    plt.tight_layout()
     plt.show()
 
-    # 7) Save the trained model
-    eqx.tree_serialise_leaves("trained_nn_model.eqx", trained_policy)
-    print("Saved trained model to 'trained_nn_model.eqx'.")
+    # Plot trajectory results
+    plot_trajectory_comparison2(
+        ts, [states], 
+        labels=["NN Controller"],
+        title_prefix="Swing-Up Performance"
+    )
+
+    # Plot energy history
+    plot_energy(
+        ts, states, PARAMS_SYSTEM,
+        title="Energy During Swing-Up"
+    )
+
+    # Compare with LQR (if available)
+    try:
+        from controller.lqr_controller import lqr_policy
+        # Run LQR simulation from near upright
+        lqr_initial_state = jnp.array([0.0, 0.1, 0.0, 0.0])  # Near upright
+        _, lqr_states = evaluate_controller(
+            lqr_policy, PARAMS_SYSTEM,
+            lqr_initial_state, TRAIN_CONFIG['t_span'], TRAIN_CONFIG['t_eval']
+        )
+        
+        # Cost comparison
+        nn_cost, nn_forces = compute_trajectory_cost(
+            Q_MATRIX, 
+            jax.vmap(convert_4d_to_5d)(states), 
+            lambda s, t: trained_controller(s, t), 
+            ts
+        )
+        lqr_cost, lqr_forces = compute_trajectory_cost(
+            Q_MATRIX[:4,:4],  # LQR uses 4D state
+            states, 
+            lqr_policy, 
+            ts
+        )
+        
+        plot_cost_comparison(nn_cost, lqr_cost)
+        plot_control_forces_comparison(ts, nn_forces, lqr_forces)
+        
+    except ImportError:
+        print("\nLQR controller not found - skipping comparison plots")
 
 if __name__ == "__main__":
     main()
