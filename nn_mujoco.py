@@ -1,4 +1,6 @@
-# file: nn_mujoco.py
+# nn_mujoco.py
+# Description: This script implements a cart-pole swing-up controller using a neural network.
+# It uses JAX for automatic differentiation and optimization, and Diffrax for ODE integration.
 
 import time
 import warnings

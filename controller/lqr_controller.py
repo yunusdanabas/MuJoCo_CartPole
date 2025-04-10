@@ -1,4 +1,8 @@
 # controller/lqr_controller.py
+# Description: This module implements a Linear Quadratic Regulator (LQR) controller for a cart-pole system.
+# It computes the control force using the LQR gain matrix and linearizes the system dynamics.
+# It also includes functions to compute the LQR gain and simulate the closed-loop system.
+
 import jax.numpy as jnp
 from jax.numpy.linalg import inv
 

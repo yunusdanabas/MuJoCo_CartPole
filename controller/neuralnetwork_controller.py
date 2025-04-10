@@ -1,4 +1,7 @@
 # controller/neuralnetwork_controller.py
+# Description: This module implements a neural network controller for a cart-pole system.
+# It uses a multi-layer perceptron to compute the control force based on the current state.
+# It also includes functions to compute the trajectory cost and train the controller using gradient descent.
 
 import equinox as eqx
 import jax

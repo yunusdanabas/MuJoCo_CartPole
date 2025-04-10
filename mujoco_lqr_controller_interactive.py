@@ -1,4 +1,6 @@
 # mujoco_lqr_controller_interactive.py
+# Description: This script implements a cart-pole swing-up controller using a linear quadratic regulator (LQR).
+
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt

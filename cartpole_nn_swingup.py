@@ -1,6 +1,7 @@
-########################################
 # cartpole_nn_swingup.py
-########################################
+# Description: This script implements a cart-pole swing-up controller using a neural network.
+# It uses JAX for automatic differentiation and optimization, and Diffrax for ODE integration.
+
 
 import jax
 import jax.numpy as jnp

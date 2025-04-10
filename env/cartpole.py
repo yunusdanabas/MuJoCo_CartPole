@@ -1,4 +1,5 @@
 # env/cartpole.py
+# Description: Cartpole dynamics for a cart-pole system.
 
 import jax
 import jax.numpy as jnp

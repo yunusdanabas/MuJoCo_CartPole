@@ -1,4 +1,6 @@
-# trainer.py
+# lib/trainer.py
+# # Description: This module contains the training loop for the neural network controller.
+# It includes functions for training the controller, computing the loss, and evaluating the controller's performance.
 
 import jax
 import jax.numpy as jnp

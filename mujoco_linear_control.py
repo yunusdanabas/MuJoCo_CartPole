@@ -1,4 +1,5 @@
 # mujoco_linear_control.py
+# Description: This script implements a linear controller for a cart-pole system using JAX and MuJoCo.
 
 import jax
 import jax.numpy as jnp

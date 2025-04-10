@@ -1,4 +1,5 @@
 # env/closedloop.py
+# Description: Closed-loop simulation for cart-pole system.
 
 import jax.numpy as jnp
 from diffrax import SaveAt, Tsit5, ODETerm, diffeqsolve

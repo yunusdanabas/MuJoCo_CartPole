@@ -1,4 +1,9 @@
 # controller/linear_controller.py
+# Description: This module implements a linear controller for a cart-pole system.
+# It computes the control force as a linear function of the current state and
+# optimizes the controller weights using gradient descent. The cost function is
+# defined as the sum of the state cost and control effort over a trajectory.
+
 import jax
 import jax.numpy as jnp
 import optax

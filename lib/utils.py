@@ -1,4 +1,5 @@
 # lib/utils.py
+# Description: Utility functions for sampling initial conditions, plotting, and computing costs and energies for a cart-pole system.
 
 import jax
 import jax.numpy as jnp

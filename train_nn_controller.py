@@ -1,4 +1,6 @@
-# main.py
+# train_nn_controller.py
+# Description: This script trains a neural network controller for a cart-pole system using JAX and Equinox. 
+# It includes training, evaluation, and plotting functionalities.
 
 import os
 import jax
