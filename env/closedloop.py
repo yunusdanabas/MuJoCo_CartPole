@@ -59,7 +59,7 @@ def simulate_closed_loop_nn(controller, params, t_span, t, initial_state=None):
     )
     
     # Post-process results
-    return jax.tree_map(
+    return jax.tree_util.tree_map(
         lambda x: x.astype(jnp.float32) if isinstance(x, jnp.ndarray) else x,
         solution
     )

@@ -5,6 +5,8 @@
 import time
 import warnings
 import os
+import sys
+from pathlib import Path
 import yaml
 import numpy as np
 import jax
@@ -12,11 +14,13 @@ import jax.numpy as jnp
 import equinox as eqx
 import matplotlib.pyplot as plt
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 import mujoco
 import mujoco_viewer
 
 # Import your model (MLP policy) definition
-from controller.neuralnetwork_controller import CartPolePolicy
+from controller.nn_controller import CartPoleNN
 
 warnings.filterwarnings("ignore", category=UserWarning, module="glfw")
 
@@ -28,7 +32,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="glfw")
 config_path = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(config_path, "r") as f:
     _CFG = yaml.safe_load(f) or {}
-dummy_model = CartPolePolicy(
+dummy_model = CartPoleNN(
     key=jax.random.PRNGKey(0),
     in_dim=5,
     hidden_dims=(64, 64),  # must match the dims used during training
