@@ -9,13 +9,15 @@ import yaml
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-import optax
 import matplotlib.pyplot as plt
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from controller.nn_controller import CartPoleNN
-from lib.trainer import train_nn_controller, evaluate_controller
-from lib.utils import sample_initial_conditions, convert_4d_to_5d, compute_trajectory_cost
+from controller.nn_controller import (
+    CartPoleNN,
+    train_nn_controller,
+    evaluate_controller,
+)
+from lib.utils import convert_4d_to_5d, compute_trajectory_cost
 from lib.visualizer import (
     plot_trajectory_comparison2,
     plot_energy,
@@ -40,7 +42,8 @@ TRAIN_CONFIG = {
     't_span': tuple(_span),
     't_eval': jnp.linspace(_span[0], _span[1], _eval_pts),
     'learning_rate': nn_cfg.get('learning_rate', 3e-4),
-    'grad_clip': nn_cfg.get('grad_clip', 1.0)
+    'grad_clip': nn_cfg.get('grad_clip', 1.0),
+    'cost_weights': tuple(nn_cfg.get('cost_weights', [10.0, 1.0, 0.01]))
 }
 
 def main():
@@ -65,7 +68,9 @@ def main():
         t_span=TRAIN_CONFIG['t_span'],
         t_eval=TRAIN_CONFIG['t_eval'],
         key=key,
-        learning_rate=TRAIN_CONFIG['learning_rate']
+        learning_rate=TRAIN_CONFIG['learning_rate'],
+        grad_clip=TRAIN_CONFIG['grad_clip'],
+        cost_weights=TRAIN_CONFIG['cost_weights']
     )
     
     # Save trained model
