@@ -57,10 +57,10 @@ def train_linear_controller(params, t_span, t, initial_conditions, Q, opt_hparam
     """
     Minimize mean( J(w) ) over multiple initial conditions.
     """
-    lr = opt_hparams.get('lr', 1e-3)
+    lr = float(opt_hparams.get('lr', 1e-3))  # Force a Python float here.
     w_init = jnp.array(opt_hparams.get('w_init', [0.0, 0.0, 0.0, 0.0, 0.0]))
     max_iters = opt_hparams.get('max_iters', 2000)
-    tolerance = opt_hparams.get('tolerance', 1e-6)
+    tolerance = float(opt_hparams.get('tolerance', 1e-6))  # Convert tolerance to float
 
     @jax.jit
     def batched_cost(w):

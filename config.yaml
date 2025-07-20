@@ -6,11 +6,11 @@ nn_model_path: saved_models/nn_controller.eqx
 nn_training:
   params_system: [1.0, 0.1, 0.5, 9.81]
   q_weights: [0.1, 10.0, 10.0, 0.1, 0.1]
-  num_epochs: 500
+  num_epochs: 20
   batch_size: 32
   t_span: [0.0, 10.0]
   t_eval_points: 100
-  learning_rate: 3e-4
+  learning_rate: 1e-3
   grad_clip: 1.0
 
 linear_training:
