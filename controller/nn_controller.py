@@ -29,7 +29,8 @@ class CartPoleNN(eqx.Module):
         self.layers.append(eqx.nn.Linear(input_size, out_dim, key=keys[-1]))
         self.activations = [jax.nn.relu for _ in hidden_dims]
 
-    def __call__(self, state: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, state: jnp.ndarray, t: float | None = None) -> jnp.ndarray:
+        """Evaluate the policy. The time argument is ignored."""
         x = state
         for layer, activation in zip(self.layers[:-1], self.activations):
             x = activation(layer(x))
