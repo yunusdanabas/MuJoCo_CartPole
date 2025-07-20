@@ -6,7 +6,11 @@
 import jax.numpy as jnp
 from jax.numpy.linalg import inv
 
+from pathlib import Path
+import yaml
+
 from env.cartpole import cartpole_dynamics
+from lib.utils import convert_5d_to_4d
 
 def linearize_cartpole(params):
     """
@@ -55,3 +59,41 @@ def compute_lqr_gain(A, B, Q, R):
         P = P + 0.01 * dP  # gradient step
     K = inv(R) @ B.T @ P
     return K
+
+
+def create_lqr_controller(
+    params: tuple[float, float, float, float],
+    Q: jnp.ndarray,
+    R: jnp.ndarray | float,
+) -> callable:
+    """Return an LQR controller function for the given parameters."""
+    if isinstance(R, float):
+        R = jnp.array([[R]])
+    A, B = linearize_cartpole(params)
+    K = compute_lqr_gain(A, B, Q, R)
+
+    def policy(state: jnp.ndarray, t: float = 0.0) -> float:
+        if state.shape[0] == 5:
+            state = convert_5d_to_4d(state)
+        return float((-(K @ state))[0])
+
+    return policy
+
+
+# Default policy using configuration values
+_CFG_PATH = Path(__file__).resolve().parents[1] / "config.yaml"
+try:
+    with _CFG_PATH.open("r") as f:
+        _CFG = yaml.safe_load(f) or {}
+except FileNotFoundError:
+    _CFG = {}
+
+_DEFAULT_PARAMS = tuple(
+    _CFG.get("nn_training", {}).get("params_system", [1.0, 0.1, 0.5, 9.81])
+)
+_LQR = _CFG.get("lqr", {})
+_DEFAULT_Q = jnp.diag(jnp.array(_LQR.get("Q", [50.0, 100.0, 5.0, 20.0])))
+_DEFAULT_R = jnp.array([[float(_LQR.get("R", 0.1))]])
+
+# Instantiate the default policy so scripts can import it directly
+lqr_policy = create_lqr_controller(_DEFAULT_PARAMS, _DEFAULT_Q, _DEFAULT_R)
