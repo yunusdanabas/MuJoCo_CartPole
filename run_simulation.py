@@ -68,15 +68,15 @@ def main() -> None:
 
     if args.controller == "nn":
         if args.mode == "train":
-            run_module("train_nn_controller", env)
+            run_module("scripts.train_nn_controller", env)
         else:
-            run_module("nn_mujoco", env)
+            run_module("scripts.nn_mujoco", env)
     elif args.controller == "linear":
-        run_module("mujoco_linear_control", env)
+        run_module("scripts.mujoco_linear_control", env)
     elif args.controller == "lqr":
-        run_module("mujoco_lqr_controller", env)
+        run_module("scripts.mujoco_lqr_controller", env)
     elif args.controller == "lqr-interactive":
-        run_module("mujoco_lqr_controller_interactive", env)
+        run_module("scripts.mujoco_lqr_controller_interactive", env)
     else:
         raise ValueError(f"Unknown controller type '{args.controller}'")
 

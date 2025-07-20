@@ -3,15 +3,25 @@
 # It includes training, evaluation, and plotting functionalities.
 
 import os
+import sys
+from pathlib import Path
 import yaml
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 import optax
 import matplotlib.pyplot as plt
-from controller.neuralnetwork_controller import CartPoleNN
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from controller.nn_controller import CartPoleNN
 from lib.trainer import train_nn_controller, evaluate_controller
-from lib.utils import *
+from lib.utils import sample_initial_conditions, convert_4d_to_5d, compute_trajectory_cost
+from lib.visualizer import (
+    plot_trajectory_comparison2,
+    plot_energy,
+    plot_cost_comparison,
+    plot_control_forces_comparison,
+)
 
 # Load configuration
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
