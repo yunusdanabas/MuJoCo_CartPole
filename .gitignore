@@ -3,10 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environment directories
-venv/
-.venv/
-
 # Data and logs
 *.log
 *.csv
