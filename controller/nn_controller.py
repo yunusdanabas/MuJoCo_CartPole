@@ -16,7 +16,7 @@ class CartPoleNN(eqx.Module):
     """Multi-layer perceptron policy for cart-pole control."""
 
     layers: list[eqx.Module]
-    activations: list = eqx.static_field()
+    activations: list = eqx.field(static=True)
 
     def __init__(self, key: jax.Array, in_dim: int = 5,
                  hidden_dims: tuple[int, ...] = (64, 64), out_dim: int = 1) -> None:
