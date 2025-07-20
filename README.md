@@ -138,6 +138,11 @@ Make sure MuJoCo is installed and licensed correctly on your system.
 
 - **Simulation & Testing:**  
   Use the provided scripts (`main_linear_only.py`, `mujoco_lqr_controller_interactive.py`, `mujoco_linear_control.py`, `nn_mujoco.py`) to simulate and compare the performance of the different controllers in both differentiable and real-time MuJoCo environments.
+  Alternatively, run `run_simulation.py` and select the desired controller via command-line flags for a unified interface.  For example:
+  ```bash
+  python run_simulation.py --controller nn            # run the NN controller
+  python run_simulation.py --controller nn --mode train  # train the NN
+  ```
 
 - **Visualization:**  
   Utility functions in `lib/utils.py` enable plotting of trajectories, energy profiles, and cost comparisons.
