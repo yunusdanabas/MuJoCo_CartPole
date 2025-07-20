@@ -1,0 +1,45 @@
+linear_training:
+  lr: 1e-4
+  max_iters: 100
+  tolerance: 1e-6
+  w_init:
+  - 10.7477045
+  - -0.00142533379
+  - -95.3456802
+  - 13.2174416
+  - -27.8421364
+lqr:
+  Q:
+  - 50.0
+  - 100.0
+  - 5.0
+  - 20.0
+  R: 0.1
+model_xml: cart_pole.xml
+nn_model_path: saved_models/nn_controller.eqx
+nn_training:
+  batch_size: 2
+  cost_weights:
+  - 10.0
+  - 1.0
+  - 0.01
+  grad_clip: 1.0
+  learning_rate: 1e-3
+  num_epochs: 5
+  params_system:
+  - 1.0
+  - 0.1
+  - 0.5
+  - 9.81
+  q_weights:
+  - 0.1
+  - 10.0
+  - 10.0
+  - 0.1
+  - 0.1
+  t_eval_points: 100
+  t_span:
+  - 0.0
+  - 10.0
+sim_duration: 30.0
+time_step: 0.01

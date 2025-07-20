@@ -99,27 +99,22 @@ def train_nn_controller(
     grad_clip: float = 1.0,
     cost_weights: Tuple[float, float, float] = (10.0, 1.0, 0.01),
 ) -> tuple[CartPoleNN, jnp.ndarray]:
-    """Train the neural network swing-up controller."""
+    """Train the neural network swing-up controller using a simplified approach."""
 
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(grad_clip),
-        optax.adam(learning_rate),
-    )
-    opt_state = optimizer.init(eqx.filter(controller, eqx.is_array))
-
+    # Use the standard equinox filter approach but be more careful about the training loop
+    diff_controller = eqx.filter(controller, eqx.is_inexact_array)
+    static_controller = eqx.filter(controller, lambda x: not eqx.is_inexact_array(x))
+    
+    # Use only SGD to avoid the optax tree structure issues
     loss_history = []
 
-    @jax.jit
-    def update_step(ctrl, opt_state, batch_states):
-        loss, grads = jax.value_and_grad(_batch_loss)(ctrl, batch_states)
-        updates, opt_state = optimizer.update(grads, opt_state, ctrl)
-        ctrl = eqx.apply_updates(ctrl, updates)
-        return ctrl, opt_state, loss
-
-    def _batch_loss(ctrl, batch_states):
+    def _loss_fn(diff_controller, batch_states):
+        # Reconstruct the controller
+        model = eqx.combine(diff_controller, static_controller)
+        
         per_traj = partial(
             _trajectory_loss,
-            controller=ctrl,
+            controller=model,
             params=params_system,
             Q=Q,
             t_span=t_span,
@@ -127,6 +122,23 @@ def train_nn_controller(
             cost_weights=cost_weights,
         )
         return jnp.mean(jax.vmap(per_traj)(batch_states))
+
+    def sgd_update(model, batch_states, lr):
+        """Simple SGD update using eqx functions"""
+        loss, grads = eqx.filter_value_and_grad(_loss_fn)(model, batch_states)
+        
+        # Apply gradient clipping manually if needed
+        if grad_clip > 0:
+            grad_norm = jnp.sqrt(sum(jnp.sum(g**2) for g in jax.tree_util.tree_leaves(grads)))
+            if grad_norm > grad_clip:
+                clip_factor = grad_clip / grad_norm
+                grads = jax.tree_util.tree_map(lambda g: g * clip_factor, grads)
+        
+        # Manual SGD update
+        updates = jax.tree_util.tree_map(lambda g: -lr * g, grads)
+        model = eqx.apply_updates(model, updates)
+        
+        return model, loss
 
     for epoch in range(num_epochs):
         key, subkey = jax.random.split(key)
@@ -138,13 +150,15 @@ def train_nn_controller(
         )
         batch_5d = jax.vmap(convert_4d_to_5d)(batch_init)
 
-        controller, opt_state, loss = update_step(controller, opt_state, batch_5d)
+        diff_controller, loss = sgd_update(diff_controller, batch_5d, learning_rate)
         loss_history.append(loss.item())
 
         if epoch % 10 == 0:
             print(f"Epoch {epoch:04d} | Loss: {loss:.4f}")
 
-    return controller, jnp.array(loss_history)
+    # Reconstruct the final controller
+    final_controller = eqx.combine(diff_controller, static_controller)
+    return final_controller, jnp.array(loss_history)
 
 
 def evaluate_controller(
