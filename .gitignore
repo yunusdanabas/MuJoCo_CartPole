@@ -1,17 +1,7 @@
-# Trained models
-/trained_nn_model.eqx
-/trained_nn_model_old.eqx
-/trained_nn_model_oldasu.eqx
-
 # Python cache directories and files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Virtual environment directories
-env/
-venv/
-.venv/
 
 # Data and logs
 *.log
