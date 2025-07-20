@@ -8,6 +8,11 @@ import jax.numpy as jnp
 import equinox as eqx
 import optax
 import numpy as np
+import sys
+from pathlib import Path
+import yaml
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from diffrax import ODETerm, Tsit5, SaveAt, diffeqsolve
 
@@ -71,22 +76,8 @@ def simulate_closed_loop(controller_func, params, t_span, t_eval, y0):
 ########################################
 # 2) Neural Network Controller (Optimized)
 ########################################
-class NNController(eqx.Module):
-    """Fixed MLP with manual layer definitions."""
-    layer1: eqx.nn.Linear
-    layer2: eqx.nn.Linear
-    layer3: eqx.nn.Linear
-
-    def __init__(self, key, width=128):
-        key1, key2, key3 = jax.random.split(key, 3)
-        self.layer1 = eqx.nn.Linear(5, width, key=key1)
-        self.layer2 = eqx.nn.Linear(width, width, key=key2)
-        self.layer3 = eqx.nn.Linear(width, 1, key=key3)
-
-    def __call__(self, state, t=0.0):
-        x = jax.nn.tanh(self.layer1(state))
-        x = jax.nn.tanh(self.layer2(x))
-        return self.layer3(x).squeeze()
+# Use shared CartPoleNN from controller.nn_controller
+from controller.nn_controller import CartPoleNN
 
 ########################################
 # 3) Energy Calculations (Unchanged)
@@ -170,21 +161,18 @@ def train_nn_controller(key, nn_model, params, t_eval, init_states, max_epochs=3
 def main():
     key = jax.random.PRNGKey(42)
 
-    # Cart-pole params
-    mc = 1.0
-    mp = 1.0
-    l  = 1.0
-    g  = 9.81
-    params = (mc, mp, l, g)
+    config_path = os.environ.get("CONFIG_PATH", "config.yaml")
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
+    nn_cfg = cfg.get("nn_training", {})
 
-    # Time horizon
-    T_final = 10.0
-    t_train = jnp.linspace(0.0, T_final, 100)   # coarse
-    t_eval  = jnp.linspace(0.0, T_final, 1000)  # finer
+    params = tuple(nn_cfg.get("params_system", [1.0, 1.0, 1.0, 9.81]))
 
-    # Build random initial states
-    # Make the range a bit bigger to encourage actual swing
-    num_inits = 32
+    T_final = nn_cfg.get("t_span", [0.0, 10.0])[1]
+    t_train = jnp.linspace(0.0, T_final, nn_cfg.get("t_eval_points", 100))
+    t_eval = jnp.linspace(0.0, T_final, 1000)
+
+    num_inits = nn_cfg.get("batch_size", 32)
     # Vectorized initial conditions with JAX RNG
     key, *subkeys = jax.random.split(key, 5)
     x0 = jax.random.uniform(subkeys[0], (num_inits,), minval=-0.4, maxval=0.4)
@@ -200,12 +188,13 @@ def main():
     ], axis=1).astype(jnp.float32)
 
     # Create net with 2 hidden layers
-    nn_model = NNController(key, width=128)
+    hidden_dims = tuple(nn_cfg.get("hidden_dims", [128, 128]))
+    nn_model = CartPoleNN(key, hidden_dims=hidden_dims)
 
     # Train
     print("Starting training...")
-    max_epochs    = 500
-    learning_rate = 1e-3   # slightly larger
+    max_epochs = nn_cfg.get("num_epochs", 500)
+    learning_rate = nn_cfg.get("learning_rate", 1e-3)
     nn_model_trained, loss_history = train_nn_controller(
         key=key,
         nn_model=nn_model,
@@ -218,8 +207,9 @@ def main():
     print("Training complete.")
 
     # Save
-    eqx.tree_serialise_leaves("nn_swingup.eqx", nn_model_trained)
-    print("Saved trained model to nn_swingup.eqx")
+    model_path = cfg.get("nn_model_path", "nn_swingup.eqx")
+    eqx.tree_serialise_leaves(model_path, nn_model_trained)
+    print(f"Saved trained model to {model_path}")
 
     # Evaluate on one test initial condition
     def controller_func(s, t):

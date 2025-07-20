@@ -6,10 +6,14 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import time
 import warnings
+import sys
+from pathlib import Path
 
 # MuJoCo + viewer
 import mujoco
 from mujoco.glfw import glfw
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # Import your LQR helpers
 from controller.lqr_controller import linearize_cartpole, compute_lqr_gain
