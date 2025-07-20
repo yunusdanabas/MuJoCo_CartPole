@@ -61,14 +61,14 @@ initial_conditions = sample_ic(key, 10)
 # Training hyperparameters
 lin_cfg = _CFG.get("linear_training", {})
 train_opts = {
-    'lr': lin_cfg.get('lr', 1e-4),
-    'w_init': lin_cfg.get('w_init', [
+    'lr': float(lin_cfg.get('lr', 1e-4)),  # Ensure a float, not a JAX array
+    'w_init': jnp.array(lin_cfg.get('w_init', [
         1.07477045e+01,
         -1.42533379e-03,
         -9.53456802e+01,
         1.32174416e+01,
         -2.78421364e+01
-    ]),
+    ])),
     'max_iters': lin_cfg.get('max_iters', 100),
     'tolerance': lin_cfg.get('tolerance', 1e-6),
 }
