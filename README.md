@@ -67,21 +67,21 @@ The physical system is modeled as follows:
 - **`controller/`**  
   - `linear_controller.py`: Implements the linear controller and its training routine.  
   - `lqr_controller.py`: Contains functions for linearizing the cart-pole system and computing the LQR gain matrix.  
-  - `neuralnetwork_controller.py`: Defines the MLP (or `CartPolePolicy`) used for neural network control.
+  - `nn_controller.py`: Defines the MLP (`CartPoleNN`) used for neural network control.
   
 - **`env/`**  
   - `cartpole.py`: Contains the nonlinear cart-pole dynamics.  
   - `closedloop.py`: Provides a wrapper for closed-loop simulation using Diffrax.
   
-- **`lib/`**  
-  - `trainer.py`: Implements the training loop for the neural network controller using an energy-shaping plus cart-deviation loss.  
-  - `utils.py`: Contains helper functions for sampling initial conditions and plotting trajectories, energies, and costs.
+- **`lib/`**
+  - `trainer.py`: Implements the training loop for the neural network controller using an energy-shaping plus cart-deviation loss.
+  - `utils.py`: Provides miscellaneous utilities such as state conversions and random sampling.
+  - `visualizer.py`: Contains plotting helpers that save figures to the `results/` directory.
   
-- **Main Scripts:**  
-  - `main_linear_only.py`: Trains and tests the linear controller and LQR in the JAX simulation environment.  
-  - `mujoco_lqr_controller_interactive.py`: Runs an interactive LQR controller in MuJoCo with overlays and keyboard controls.  
-  - `mujoco_linear_control.py`: Implements the trained linear controller in a MuJoCo simulation.  
-  - `nn_mujoco.py`: Deploys the trained neural network controller in MuJoCo.  
+- **Main Scripts (in `scripts/`):**
+  - `mujoco_lqr_controller_interactive.py`: Runs an interactive LQR controller in MuJoCo with overlays and keyboard controls.
+  - `mujoco_linear_control.py`: Implements the trained linear controller in a MuJoCo simulation.
+  - `nn_mujoco.py`: Deploys the trained neural network controller in MuJoCo.
   - `train_nn_controller.py`: Trains the neural network controller using differentiable simulation and rollout cost minimization.
 
 - **Additional Files:**  
@@ -133,11 +133,11 @@ Make sure MuJoCo is installed and licensed correctly on your system.
 
 ## Usage
 
-- **Training:**  
-  Run `train_nn_controller.py` to train the neural network controller for the swing-up task. The trained model is saved as `trained_nn_model.eqx`.
+- **Training:**
+  Run `scripts/train_nn_controller.py` to train the neural network controller for the swing-up task. The trained model is saved as `trained_nn_model.eqx`.
 
 - **Simulation & Testing:**  
-  Use the provided scripts (`main_linear_only.py`, `mujoco_lqr_controller_interactive.py`, `mujoco_linear_control.py`, `nn_mujoco.py`) to simulate and compare the performance of the different controllers in both differentiable and real-time MuJoCo environments.
+  Use the provided scripts (`scripts/mujoco_lqr_controller_interactive.py`, `scripts/mujoco_linear_control.py`, `scripts/nn_mujoco.py`) to simulate and compare the performance of the different controllers in both differentiable and real-time MuJoCo environments.
   Alternatively, run `run_simulation.py` and select the desired controller via command-line flags for a unified interface.  For example:
   ```bash
   python run_simulation.py --controller nn            # run the NN controller

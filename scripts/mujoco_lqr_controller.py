@@ -7,7 +7,11 @@ import matplotlib.pyplot as plt
 import time
 import warnings
 import os
+import sys
+from pathlib import Path
 import yaml
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # MuJoCo + viewer
 import mujoco
