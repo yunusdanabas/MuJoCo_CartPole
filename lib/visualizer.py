@@ -136,14 +136,18 @@ def plot_energy(
 
     def _energy(state):
         x, theta, x_dot, theta_dot = state
-        kinetic = 0.5 * (mc + mp) * x_dot**2 - mp * l * np.cos(theta) * x_dot * theta_dot + 0.5 * mp * l**2 * theta_dot**2
-        potential = mp * g * l * (1 - np.cos(theta))
+        kinetic = (
+            0.5 * (mc + mp) * x_dot ** 2
+            - mp * l * jnp.cos(theta) * x_dot * theta_dot
+            + 0.5 * mp * l**2 * theta_dot**2
+        )
+        potential = mp * g * l * (1 - jnp.cos(theta))
         return kinetic + potential
 
     energies = jax.vmap(_energy)(states)
 
     plt.figure(figsize=(8, 5))
-    plt.plot(t, np.array(energies))
+    plt.plot(np.asarray(t), np.asarray(energies))
     plt.title(title)
     plt.xlabel("Time (s)")
     plt.ylabel("Energy (J)")

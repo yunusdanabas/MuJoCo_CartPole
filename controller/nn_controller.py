@@ -98,6 +98,8 @@ def train_nn_controller(
     learning_rate: float = 1e-3,
     grad_clip: float = 1.0,
     cost_weights: Tuple[float, float, float] = (10.0, 1.0, 0.01),
+    curriculum_learning: bool = False,
+    curriculum_stages: int = 1,
 ) -> tuple[CartPoleNN, jnp.ndarray]:
     """Train the neural network swing-up controller using a simplified approach."""
 
@@ -126,7 +128,7 @@ def train_nn_controller(
     def sgd_update(model, batch_states, lr):
         """Simple SGD update using eqx functions"""
         loss, grads = eqx.filter_value_and_grad(_loss_fn)(model, batch_states)
-        
+
         # Apply gradient clipping manually if needed
         if grad_clip > 0:
             grad_norm = jnp.sqrt(sum(jnp.sum(g**2) for g in jax.tree_util.tree_leaves(grads)))
@@ -135,17 +137,34 @@ def train_nn_controller(
                 grads = jax.tree_util.tree_map(lambda g: g * clip_factor, grads)
         
         # Manual SGD update
-        updates = jax.tree_util.tree_map(lambda g: -lr * g, grads)
+        # Only update array leaves; non-array leaves get `None`
+        updates = jax.tree_util.tree_map(
+            lambda g: -lr * g if eqx.is_inexact_array(g) else None,
+            grads,
+        )
         model = eqx.apply_updates(model, updates)
         
         return model, loss
 
     for epoch in range(num_epochs):
         key, subkey = jax.random.split(key)
+        
+        # Curriculum learning: gradually increase difficulty
+        if curriculum_learning and curriculum_stages > 1:
+            stage = min(epoch // (num_epochs // curriculum_stages), curriculum_stages - 1)
+            # Start with smaller ranges and shorter times, gradually increase
+            x_range_factor = 0.5 + 0.5 * (stage / (curriculum_stages - 1))
+            theta_range_factor = 0.3 + 0.7 * (stage / (curriculum_stages - 1))
+            current_x_range = (-2.0 * x_range_factor, 2.0 * x_range_factor)
+            current_theta_range = (-jnp.pi * theta_range_factor, jnp.pi * theta_range_factor)
+        else:
+            current_x_range = (-2.0, 2.0)
+            current_theta_range = (-jnp.pi, jnp.pi)
+        
         batch_init = sample_initial_conditions(
             batch_size,
-            x_range=(-2.0, 2.0),
-            theta_range=(-jnp.pi, jnp.pi),
+            x_range=current_x_range,
+            theta_range=current_theta_range,
             key=subkey,
         )
         batch_5d = jax.vmap(convert_4d_to_5d)(batch_init)
@@ -153,8 +172,12 @@ def train_nn_controller(
         diff_controller, loss = sgd_update(diff_controller, batch_5d, learning_rate)
         loss_history.append(loss.item())
 
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch:04d} | Loss: {loss:.4f}")
+        if epoch % 50 == 0:  # Print less frequently for speed
+            stage_info = ""
+            if curriculum_learning and curriculum_stages > 1:
+                stage = min(epoch // (num_epochs // curriculum_stages), curriculum_stages - 1)
+                stage_info = f" | Stage: {stage+1}/{curriculum_stages}"
+            print(f"Epoch {epoch:04d} | Loss: {loss:.4f}{stage_info}")
 
     # Reconstruct the final controller
     final_controller = eqx.combine(diff_controller, static_controller)

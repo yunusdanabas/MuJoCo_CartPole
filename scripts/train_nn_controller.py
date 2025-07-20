@@ -41,34 +41,65 @@ TRAIN_CONFIG = {
     'batch_size': nn_cfg.get('batch_size', 32),
     't_span': tuple(_span),
     't_eval': jnp.linspace(_span[0], _span[1], _eval_pts),
-    'learning_rate': nn_cfg.get('learning_rate', 3e-4),
-    'grad_clip': nn_cfg.get('grad_clip', 1.0),
-    'cost_weights': tuple(nn_cfg.get('cost_weights', [10.0, 1.0, 0.01]))
+    'learning_rate': float(nn_cfg.get('learning_rate', 3e-4)),
+    'grad_clip': float(nn_cfg.get('grad_clip', 1.0)),
+    'cost_weights': tuple(nn_cfg.get('cost_weights', [10.0, 1.0, 0.01])),
+    'hidden_dims': tuple(nn_cfg.get('hidden_dims', [64, 64])),
+    'curriculum_learning': nn_cfg.get('curriculum_learning', False),
+    'curriculum_stages': nn_cfg.get('curriculum_stages', 1),
 }
 
 def main():
-    print("Note: Neural network training is currently experiencing issues with the optimizer.")
-    print("This appears to be due to gradient tree structure incompatibilities between")
-    print("equinox and optax in this specific configuration.")
-    print("\nAs a temporary workaround, the training has been disabled.")
-    print("The neural network controller structure is intact and can be used")
-    print("for inference with pre-trained weights if available.")
-    
-    # For now, just create and save a controller without training
+    """Train the neural network swing-up controller and save the result."""
+
     key = jax.random.PRNGKey(42)
     os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
-    
-    # Initialize controller
-    controller = CartPoleNN(key=key)
+
+    controller = CartPoleNN(key=key, hidden_dims=TRAIN_CONFIG['hidden_dims'])
     print("Initialized new neural network controller")
-    
-    # Save the untrained model
-    eqx.tree_serialise_leaves(MODEL_SAVE_PATH, controller)
-    print(f"Saved controller structure to {MODEL_SAVE_PATH}")
-    
-    print("\nTo fix the training issue, the gradient computation needs to be restructured")
-    print("to avoid the tree structure problems with static fields in the neural network.")
-    print("This is a known issue with certain combinations of JAX/equinox/optax versions.")
+    print(f"Architecture: {TRAIN_CONFIG['hidden_dims']}")
+    print(f"Total parameters: {sum(p.size for p in jax.tree_util.tree_leaves(eqx.filter(controller, eqx.is_inexact_array)))}")
+
+    print("\nStarting training...")
+    trained_controller, loss_history = train_nn_controller(
+        controller=controller,
+        params_system=PARAMS_SYSTEM,
+        Q=Q_MATRIX,
+        num_epochs=TRAIN_CONFIG['num_epochs'],
+        batch_size=TRAIN_CONFIG['batch_size'],
+        t_span=TRAIN_CONFIG['t_span'],
+        t_eval=TRAIN_CONFIG['t_eval'],
+        key=key,
+        learning_rate=TRAIN_CONFIG['learning_rate'],
+        grad_clip=TRAIN_CONFIG['grad_clip'],
+        cost_weights=TRAIN_CONFIG['cost_weights'],
+    )
+
+    eqx.tree_serialise_leaves(MODEL_SAVE_PATH, trained_controller)
+    print(f"\nSaved trained controller to {MODEL_SAVE_PATH}")
+
+    # Evaluate the final controller from the downward position
+    initial_state = jnp.array([0.0, jnp.pi, 0.0, 0.0])
+    ts, states = evaluate_controller(
+        trained_controller,
+        PARAMS_SYSTEM,
+        initial_state,
+        TRAIN_CONFIG['t_span'],
+        TRAIN_CONFIG['t_eval'],
+    )
+
+    plt.figure(figsize=(10, 4))
+    plt.semilogy(loss_history)
+    plt.title("Training Loss Progress")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (log scale)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    plot_trajectory_comparison2(ts, [states], labels=["NN Controller"],
+                                title_prefix="Swing-Up Performance")
+    plot_energy(ts, states, PARAMS_SYSTEM, title="Energy During Swing-Up")
 
 if __name__ == "__main__":
     main()
