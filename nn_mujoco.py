@@ -4,6 +4,8 @@
 
 import time
 import warnings
+import os
+import yaml
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -23,20 +25,26 @@ warnings.filterwarnings("ignore", category=UserWarning, module="glfw")
 # 1. Load the Trained NN Model
 ###############################################################################
 # Must instantiate a "dummy" model with the same structure as we had at training
+config_path = os.environ.get("CONFIG_PATH", "config.yaml")
+with open(config_path, "r") as f:
+    _CFG = yaml.safe_load(f) or {}
 dummy_model = CartPolePolicy(
     key=jax.random.PRNGKey(0),
     in_dim=5,
     hidden_dims=(64, 64),  # must match the dims used during training
     out_dim=1
 )
-trained_model = eqx.tree_deserialise_leaves("trained_nn_model.eqx", dummy_model)
-print("Loaded trained NN model from 'trained_nn_model.eqx'.")
+model_path = os.environ.get(
+    "NN_MODEL_PATH", _CFG.get("nn_model_path", "trained_nn_model.eqx")
+)
+trained_model = eqx.tree_deserialise_leaves(model_path, dummy_model)
+print(f"Loaded trained NN model from '{model_path}'.")
 
 
 ###############################################################################
 # 2. MuJoCo Cart-Pole Setup
 ###############################################################################
-XML_FILE = "cart_pole.xml"   # path to your XML
+XML_FILE = os.environ.get("MODEL_XML", _CFG.get("model_xml", "cart_pole.xml"))
 with open(XML_FILE, "r") as f:
     xml_str = f.read()
 
@@ -105,7 +113,7 @@ xdot_log = []
 thetadot_log = []
 
 sim_time = 0.0
-sim_duration = 30.0
+sim_duration = float(os.environ.get("SIM_DURATION", _CFG.get("sim_duration", 30.0)))
 start_time = time.time()
 
 while True:

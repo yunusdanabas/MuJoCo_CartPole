@@ -54,11 +54,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config_path = os.path.abspath(args.config)
+    config = load_config(config_path)
 
     # Environment variables for child scripts
     env = os.environ.copy()
     env.update({
+        "CONFIG_PATH": config_path,
         "MODEL_XML": str(config.get("model_xml", "cart_pole.xml")),
         "SIM_DURATION": str(config.get("sim_duration", 30.0)),
         "NN_MODEL_PATH": str(config.get("nn_model_path", "saved_models/nn_controller.eqx")),

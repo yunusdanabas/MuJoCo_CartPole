@@ -6,6 +6,8 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import time
 import warnings
+import os
+import yaml
 
 # MuJoCo + viewer
 import mujoco
@@ -13,6 +15,10 @@ import mujoco_viewer
 
 # Import your LQR helpers
 from controller.lqr_controller import linearize_cartpole, compute_lqr_gain
+
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
+with open(CONFIG_PATH, "r") as f:
+    _CFG = yaml.safe_load(f) or {}
 
 warnings.filterwarnings("ignore", category=UserWarning, module="glfw")
 
@@ -39,7 +45,7 @@ print("LQR gain K =", K)
 ###############################################################################
 # 2. Load MuJoCo Model
 ###############################################################################
-XML_FILE = "cart_pole.xml"
+XML_FILE = os.environ.get("MODEL_XML", _CFG.get("model_xml", "cart_pole.xml"))
 with open(XML_FILE, "r") as f:
     xml_str = f.read()
 
@@ -114,7 +120,7 @@ viewer.render()
 time.sleep(2)
 
 sim_time = 0.0
-sim_duration = 30.0
+sim_duration = float(os.environ.get("SIM_DURATION", _CFG.get("sim_duration", 30.0)))
 start_time = time.time()
 
 time_log = []
