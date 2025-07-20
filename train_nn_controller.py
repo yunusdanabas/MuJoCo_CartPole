@@ -3,6 +3,7 @@
 # It includes training, evaluation, and plotting functionalities.
 
 import os
+import yaml
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -12,17 +13,24 @@ from controller.neuralnetwork_controller import CartPoleNN
 from lib.trainer import train_nn_controller, evaluate_controller
 from lib.utils import *
 
-# Configuration
-MODEL_SAVE_PATH = "saved_models/nn_controller.eqx"
-PARAMS_SYSTEM = (1.0, 0.1, 0.5, 9.81)  # (mc, mp, l, g)
-Q_MATRIX = jnp.diag(jnp.array([0.1, 10.0, 10.0, 0.1, 0.1]))  # 5D state weights
+# Load configuration
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
+with open(CONFIG_PATH, "r") as f:
+    _CONFIG = yaml.safe_load(f) or {}
+
+MODEL_SAVE_PATH = _CONFIG.get("nn_model_path", "saved_models/nn_controller.eqx")
+nn_cfg = _CONFIG.get("nn_training", {})
+PARAMS_SYSTEM = tuple(nn_cfg.get("params_system", [1.0, 0.1, 0.5, 9.81]))
+Q_MATRIX = jnp.diag(jnp.array(nn_cfg.get("q_weights", [0.1, 10.0, 10.0, 0.1, 0.1])))
+_span = nn_cfg.get("t_span", [0.0, 10.0])
+_eval_pts = nn_cfg.get("t_eval_points", 100)
 TRAIN_CONFIG = {
-    'num_epochs': 500,
-    'batch_size': 32,
-    't_span': (0.0, 10.0),
-    't_eval': jnp.linspace(0, 10, 100),
-    'learning_rate': 3e-4,
-    'grad_clip': 1.0
+    'num_epochs': nn_cfg.get('num_epochs', 500),
+    'batch_size': nn_cfg.get('batch_size', 32),
+    't_span': tuple(_span),
+    't_eval': jnp.linspace(_span[0], _span[1], _eval_pts),
+    'learning_rate': nn_cfg.get('learning_rate', 3e-4),
+    'grad_clip': nn_cfg.get('grad_clip', 1.0)
 }
 
 def main():
@@ -42,12 +50,12 @@ def main():
         controller=controller,
         params_system=PARAMS_SYSTEM,
         Q=Q_MATRIX,
-        num_epochs=500,
-        batch_size=32,
-        t_span=(0.0, 10.0),
-        t_eval=jnp.linspace(0, 10, 100),
+        num_epochs=TRAIN_CONFIG['num_epochs'],
+        batch_size=TRAIN_CONFIG['batch_size'],
+        t_span=TRAIN_CONFIG['t_span'],
+        t_eval=TRAIN_CONFIG['t_eval'],
         key=key,
-        learning_rate=1e-4
+        learning_rate=TRAIN_CONFIG['learning_rate']
     )
     
     # Save trained model
