@@ -1,6 +1,49 @@
+# Trained models
 /trained_nn_model.eqx
 /trained_nn_model_old.eqx
 /trained_nn_model_oldasu.eqx
-/controller/__pycache__
-/env/__pycache__
-/lib/__pycache__
+
+# Python cache directories and files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment directories
+env/
+venv/
+.venv/
+
+# Data and logs
+*.log
+*.csv
+*.dat
+logs/
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Additional temporary files
+*.tmp
+*.bak
+*.swp
+
+# Exclude any sensitive configuration files
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
