@@ -1,104 +1,137 @@
-# env/cartpole.py
-# Description: Cartpole dynamics for a cart-pole system.
+"""
+env/cartpole.py
+-------------------------------------------------------------------------------
+Cart-Pole continuous-time dynamics (JAX).
+
+Supports both state encodings:
+4-state: [x, theta, x_dot, theta_dot]
+5-state: [x, cos theta, sin theta, x_dot, theta_dot]
+
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float
+
+from .helpers import (
+    four_to_five,
+    five_to_four,
+    inverse_mass_matrix,
+    total_energy,
+)
+
+# -----------------------------------------------------------------------------#
+# Parameters                                                                    #
+# -----------------------------------------------------------------------------#
+
+@dataclass(frozen=True)
+class CartPoleParams:
+    mc: float = 1.0     # Cart mass  [kg]
+    mp: float = 1.0     # Pole mass  [kg]
+    l:  float = 1.0     # Pole length [m]
+    g:  float = 9.81    # Gravity     [m s^-2]
+
+# -----------------------------------------------------------------------------#
+# Core dynamics                                                                 #
+# -----------------------------------------------------------------------------#
+
+@jax.jit
+def _dynamics_single(
+    state: Float[Array, "state_dim"],
+    t: float,
+    params: CartPoleParams,
+    controller,
+) -> Float[Array, "state_dim"]:
+    """JIT-compiled dynamics for one cart-pole."""
+
+    # Ensure 5-state representation internally
+    state5 = jax.lax.cond(
+        state.shape[0] == 4,
+        lambda s: four_to_five(s),
+        lambda s: s,
+        state,
+    )
+
+    # Unpack for readability
+    x, cos_theta, sin_theta, x_dot, theta_dot = state5
+    mp, l, g = params.mp, params.l, params.g
+
+    # Control input (scalar)
+    force = controller(state5, t)
+
+    # Pre-compute inverse mass matrix
+    m11, m12, m22, _ = inverse_mass_matrix(cos_theta, params)
+
+    # Right-hand side: τ_g + B u − C q̇
+    rhs1 = force
+    rhs2 = mp * g * l * sin_theta - mp * l * sin_theta * theta_dot * theta_dot
+
+    # Accelerations using analytic M^-1
+    x_ddot     = m11 * rhs1 + m12 * rhs2
+    theta_ddot = m12 * rhs1 + m22 * rhs2
+
+    # Time-derivatives of cos(theta) and sin(theta)
+    cos_dot = -sin_theta * theta_dot
+    sin_dot =  cos_theta * theta_dot
+
+    state5_dot = jnp.array([x_dot, cos_dot, sin_dot, x_ddot, theta_ddot])
+
+    # If caller gave 4-state, convert derivative back to 4-state layout
+    return jax.lax.cond(
+        state.shape[0] == 4,
+        lambda s: five_to_four(s),
+        lambda s: s,
+        state5_dot,
+    )
+
+# -----------------------------------------------------------------------------#
+# Public vectorised interface                                                   #
+# -----------------------------------------------------------------------------#
+
+def dynamics(
+    state: Float[Array, "... state_dim"],
+    t: float | Array,
+    params: CartPoleParams = CartPoleParams(),
+    controller=lambda s, t: 0.0,
+) -> Float[Array, "... state_dim"]:
+    """Vectorised cart-pole dynamics: works on scalars **or** batches."""
+    # Handle scalar time input
+    t_scalar = float(t) if jnp.isscalar(t) else t
+    
+    _dyn = jax.jit(
+        _dynamics_single,
+        static_argnames=("params", "controller"),
+    )
+    
+    if state.ndim > 1:
+        return jax.vmap(_dyn, in_axes=(0, None, None, None))(
+            state, t_scalar, params, controller
+        )
+    else:
+        return _dyn(state, t_scalar, params, controller)
+
+# -----------------------------------------------------------------------------#
+# Legacy compatibility functions                                                #
+# -----------------------------------------------------------------------------#
 
 def cartpole_dynamics(t, state, args):
-    """
-    Basic cart-pole dynamics in continuous time.
-    state = [x, theta, x_dot, theta_dot]
-    """
+    """Legacy function for backward compatibility."""
     params, controller = args
-    x, theta, x_dot, theta_dot = state
-
-    # Control force from user-defined controller
-    f = controller(state, t)
-
-    mc, mp, l, g = params
-    cos_theta = jnp.cos(theta)
-    sin_theta = jnp.sin(theta)
-
-    # Mass matrix
-    M = jnp.array([
-        [mc + mp, -mp * l * cos_theta],
-        [-mp * l * cos_theta, mp * l**2]
-    ])
-
-    # Coriolis-like term
-    C = jnp.array([
-        [0, mp * l * sin_theta * theta_dot],
-        [0, 0]
-    ])
-
-    # Gravity
-    tau_g = jnp.array([0, mp * g * l * sin_theta])
-
-    # B matrix
-    B = jnp.array([1, 0])
-
-    rhs = tau_g + B * f - C @ jnp.array([x_dot, theta_dot])
-    q_ddot = jnp.linalg.solve(M, rhs)
-
-    return jnp.array([x_dot, theta_dot, q_ddot[0], q_ddot[1]])
-
+    if isinstance(params, (tuple, list)):
+        mc, mp, l, g = params
+        params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
+    
+    return dynamics(state, t, params, controller)
 
 
 def cartpole_dynamics_nn(t, state, args):
-    """
-    5-element version. 
-    state = [x, cosθ, sinθ, x_dot, θ_dot]
-
-    returns d/dt [x, cosθ, sinθ, x_dot, θ_dot].
-    """
+    """Legacy function for 5-state representation."""
     params, controller = args
-    mc, mp, l, g = params
-
-    # Unpack the state
-    x = state[0]
-    cos_theta = state[1]
-    sin_theta = state[2]
-    x_dot = state[3]
-    theta_dot = state[4]
-
-    # Evaluate control force from the controller
-    f = controller(state, t)  # still a function of the 5-element state
-
-    # Mass matrix
-    M = jnp.array([
-        [mc + mp, -mp * l * cos_theta],
-        [-mp * l * cos_theta, mp * l**2]
-    ])
-
-    # Coriolis matrix
-    C = jnp.array([
-        [0.0, mp * l * sin_theta * theta_dot],
-        [0.0, 0.0]
-    ])
-
-    # Gravity
-    tau_g = jnp.array([0.0, mp * g * l * sin_theta])
-
-    # B
-    B = jnp.array([1.0, 0.0])
-
-    # Evaluate the acceleration
-    q_dot = jnp.array([x_dot, theta_dot])
-    rhs = tau_g + B * f - (C @ q_dot)
-    q_ddot = jnp.linalg.solve(M + 1e-9*jnp.eye(2), rhs)  # optional regularization
-
-    x_ddot = q_ddot[0]
-    theta_ddot = q_ddot[1]
-
-    # Also compute time derivatives of cosθ and sinθ
-    cos_theta_dot = -sin_theta * theta_dot
-    sin_theta_dot =  cos_theta * theta_dot
-
-    # Return the full derivative
-    return jnp.array([
-        x_dot,
-        cos_theta_dot,
-        sin_theta_dot,
-        x_ddot,
-        theta_ddot
-    ])
+    if isinstance(params, (tuple, list)):
+        mc, mp, l, g = params
+        params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
+    
+    return dynamics(state, t, params, controller)

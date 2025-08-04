@@ -5,19 +5,19 @@ nn_model_path: saved_models/nn_controller.eqx
 
 nn_training:
   params_system: [1.0, 0.1, 0.5, 9.81]
-  q_weights: [10.0, 100.0, 100.0, 1.0, 1.0]  # Increased position and angle penalties
-  cost_weights: [1.0, 5.0, 0.01]  # Balanced energy weight, moderate state weight, very low control weight
-  num_epochs: 300  # Fast training - much shorter
-  batch_size: 64  # Larger batch for efficiency
-  t_span: [0.0, 3.0]  # Even shorter episodes for speed
-  t_eval_points: 30  # Fewer points for faster computation
-  learning_rate: 5e-4  # Higher learning rate for faster convergence
+  q_weights: [5.0, 20.0, 20.0, 1.0, 0.5]  # Moderate angle penalties
+  cost_weights: [5.0, 1.0, 0.05]  # Emphasize energy, balanced state and control
+  num_epochs: 500  # Longer training for better convergence
+  batch_size: 128  # Larger batch improves gradient estimates
+  t_span: [0.0, 6.0]  # Longer horizon to capture full swing-up
+  t_eval_points: 60  # More evaluation points across the horizon
+  learning_rate: 3e-4  # Conservative learning rate
   grad_clip: 1.0  # Relaxed clipping
   
   # New architecture parameters
-  hidden_dims: [64, 64]  # Smaller, faster network
-  curriculum_learning: false  # Disable for speed
-  curriculum_stages: 1  # Single stage
+  hidden_dims: [128, 128]  # Larger network for complex dynamics
+  curriculum_learning: true  # Gradually increase difficulty
+  curriculum_stages: 3  # Three-stage curriculum
 
 linear_training:
   lr: 1e-4
