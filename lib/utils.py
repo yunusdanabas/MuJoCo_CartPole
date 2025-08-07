@@ -416,3 +416,65 @@ def compute_energy_nn(
     potential = mp * g * l * (1 - cosθ)
     
     return trans_energy + rot_energy + coriolis + potential
+
+###############################################################################
+#                           Mathematical Utilities                           #
+###############################################################################
+
+def clamp(x: jnp.ndarray, min_val: float, max_val: float) -> jnp.ndarray:
+    """
+    Clamps array values to be within [min_val, max_val].
+    
+    Args:
+        x: Input array
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+        
+    Returns:
+        Clamped array
+    """
+    return jnp.clip(x, min_val, max_val)
+
+
+def clip_by_norm(x: jnp.ndarray, max_norm: float) -> jnp.ndarray:
+    """
+    Clips vector to have maximum norm while preserving direction.
+    
+    Args:
+        x: Input vector
+        max_norm: Maximum allowed norm
+        
+    Returns:
+        Clipped vector
+    """
+    norm = jnp.linalg.norm(x)
+    return jnp.where(norm > max_norm, x * (max_norm / norm), x)
+
+
+def safe_divide(numerator: jnp.ndarray, denominator: jnp.ndarray, 
+                eps: float = 1e-8) -> jnp.ndarray:
+    """
+    Safe division that avoids division by zero.
+    
+    Args:
+        numerator: Numerator array
+        denominator: Denominator array
+        eps: Small value to add to denominator
+        
+    Returns:
+        Result of safe division
+    """
+    return numerator / (denominator + eps)
+
+
+def normalize_angle(angle: jnp.ndarray) -> jnp.ndarray:
+    """
+    Normalizes angle to [-π, π] range.
+    
+    Args:
+        angle: Input angle(s) in radians
+        
+    Returns:
+        Normalized angle(s)
+    """
+    return jnp.arctan2(jnp.sin(angle), jnp.cos(angle))

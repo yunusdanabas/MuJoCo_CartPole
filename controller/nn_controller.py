@@ -1,37 +1,72 @@
 """nn_controller.py
-Defines a neural network controller for the cart-pole system.
-The controller is a simple multilayer perceptron mapping the
-5D state [x, cos(theta), sin(theta), x_dot, theta_dot] to a
-scalar force.
+Neural-network controller (MLP) built with Equinox.
+
+Accepts either a ready-trained model or initialises a fresh,
+random MLP of dimensions you specify.
+Works on 5-state by design; will up-cast 4-state.
 """
 
 from __future__ import annotations
-
+from dataclasses import dataclass
 from functools import partial
-from typing import Callable, Optional, Tuple
+from typing import Optional, Tuple
 
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 import optax
 
-from env.closedloop import simulate_closed_loop_nn
-from lib.utils import (
-    sample_initial_conditions,
-    convert_4d_to_5d,
-    convert_5d_to_4d,
-    compute_energy_nn,
-)
+from controller.base import Controller
+from env.cartpole import CartPoleParams
+from env.helpers import four_to_five, five_to_four
+from lib.utils import sample_initial_conditions, convert_4d_to_5d, convert_5d_to_4d
+from env.closedloop import simulate 
 
 
+# ------------------------------------------------------------------- helpers
+def _build_mlp(in_dim, hidden_dims=(64, 64), *, key):
+    """Build MLP with tanh activations."""
+    layers = []
+    hkey = key
+    dims = (in_dim, *hidden_dims, 1)
+    for i, (m, n) in enumerate(zip(dims[:-1], dims[1:])):
+        hkey, sub = jax.random.split(hkey)
+        layers.append(eqx.nn.Linear(m, n, key=sub))
+        if i < len(dims) - 2:
+            layers.append(jax.nn.tanh)
+    return eqx.nn.Sequential(layers)
+
+
+# ------------------------------------------------------------------ class
+@dataclass
+class NNController(Controller):
+    net: eqx.Module = None
+
+    @classmethod
+    def init(cls, *, hidden_dims=(64, 64), key=jax.random.PRNGKey(0)):
+        """Initialize with random weights."""
+        net = _build_mlp(5, hidden_dims, key=key)
+        return cls(net=net)
+
+    def _force(self, state, _t):
+        s5 = jax.lax.cond(
+            state.shape[-1] == 4,
+            four_to_five,
+            lambda x: x,
+            state
+        )
+        return jnp.squeeze(self.net(s5))
+
+
+# Legacy CartPoleNN class for backward compatibility
 class CartPoleNN(eqx.Module):
-    """Multi-layer perceptron policy for cart-pole control."""
-
-    layers: list[eqx.Module]
+    """Legacy MLP policy for cart-pole control."""
+    
+    layers: list
     activations: list = eqx.field(static=True)
 
     def __init__(self, key: jax.Array, in_dim: int = 5,
-                 hidden_dims: tuple[int, ...] = (64, 64), out_dim: int = 1) -> None:
+                 hidden_dims: tuple = (64, 64), out_dim: int = 1):
         keys = jax.random.split(key, len(hidden_dims) + 1)
         self.layers = []
         input_size = in_dim
@@ -41,36 +76,26 @@ class CartPoleNN(eqx.Module):
         self.layers.append(eqx.nn.Linear(input_size, out_dim, key=keys[-1]))
         self.activations = [jax.nn.relu for _ in hidden_dims]
 
-    def __call__(self, state: jnp.ndarray, t: Optional[float] = None) -> jnp.ndarray:
+    def __call__(self, state, t=None):
         x = state
         for layer, activation in zip(self.layers[:-1], self.activations):
             x = activation(layer(x))
         return self.layers[-1](x)[0]
 
 
-###############################################################################
-#                        Training and Evaluation Helpers                       #
-###############################################################################
-
-def _trajectory_loss(
-    initial_state: jnp.ndarray,
-    controller: eqx.Module,
-    params: Tuple[float, float, float, float],
-    Q: jnp.ndarray,
-    t_span: Tuple[float, float],
-    t_eval: jnp.ndarray,
-    cost_weights: Tuple[float, float, float],
-) -> float:
-    """Compute loss for a single rollout."""
+# Legacy training functions
+def _trajectory_loss(initial_state, controller, params, Q, t_span, t_eval, cost_weights):
+    """Legacy trajectory loss computation."""
+    from lib.utils import compute_energy_nn
+    
     mc, mp, l, g = params
     energy_w, state_w, control_w = cost_weights
 
-    sol = simulate_closed_loop_nn(
+    sol = simulate(
         controller=controller,
         params=params,
-        t_span=t_span,
-        t=t_eval,
-        initial_state=initial_state,
+        ts=t_eval,
+        y0=initial_state,
     )
 
     states = sol.ys
@@ -86,29 +111,24 @@ def _trajectory_loss(
     return energy_w * energy_loss + state_w * state_cost + control_w * control_cost
 
 
-def train_nn_controller(
-    controller: CartPoleNN,
-    params_system: Tuple[float, float, float, float],
-    Q: jnp.ndarray,
-    num_epochs: int,
-    batch_size: int,
-    t_span: Tuple[float, float],
-    t_eval: jnp.ndarray,
-    key: jax.Array,
-    learning_rate: float = 1e-3,
-    grad_clip: float = 1.0,
-    cost_weights: Tuple[float, float, float] = (10.0, 1.0, 0.01),
-    curriculum_learning: bool = False,
-    curriculum_stages: int = 1,
-) -> tuple[CartPoleNN, jnp.ndarray]:
-    """Train the neural network swing-up controller using a simplified approach."""
-
-    # Use the standard equinox filter approach but be more careful about the training loop
+def train_nn_controller(controller, params_system, Q, num_epochs, batch_size, 
+                       t_span, t_eval, key, **kwargs):
+    """Legacy training function for backward compatibility."""
+    
+    
+    # Extract parameters with defaults
+    learning_rate = kwargs.get('learning_rate', 1e-3)
+    cost_weights = kwargs.get('cost_weights', (10.0, 1.0, 0.01))
+    curriculum_learning = kwargs.get('curriculum_learning', False)
+    curriculum_stages = kwargs.get('curriculum_stages', 1)
+    
+    # Filter trainable vs static
     diff_controller = eqx.filter(controller, eqx.is_inexact_array)
     static_controller = eqx.filter(controller, lambda x: not eqx.is_inexact_array(x))
     
     # Use only SGD to avoid the optax tree structure issues
     loss_history = []
+    grad_clip = kwargs.get('grad_clip', 0.0)
 
     def _loss_fn(diff_controller, batch_states):
         # Reconstruct the controller
@@ -193,12 +213,12 @@ def evaluate_controller(
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Evaluate controller from a given initial 4D state."""
     init_5d = convert_4d_to_5d(initial_state)
-    sol = simulate_closed_loop_nn(
+    sol = simulate(  # Changed from simulate_closed_loop_nn
         controller=controller,
         params=params_system,
         t_span=t_span,
-        t=t_eval,
-        initial_state=init_5d,
+        ts=t_eval,  # Changed parameter name
+        y0=init_5d,  # Changed parameter name
     )
     states_4d = jax.vmap(convert_5d_to_4d)(sol.ys)
     return sol.ts, states_4d

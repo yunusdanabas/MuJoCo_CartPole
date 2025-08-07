@@ -1,94 +1,111 @@
-# controller/linear_controller.py
-# Description: This module implements a linear controller for a cart-pole system.
-# It computes the control force as a linear function of the current state and
-# optimizes the controller weights using gradient descent. The cost function is
-# defined as the sum of the state cost and control effort over a trajectory.
+"""
+controller/linear_controller.py
 
+Linear feedback controller for cart-pole systems.
+Implements u = -K @ state with JIT compilation by default.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
-import optax
-from functools import partial
+import time
+from controller.base import Controller
 
-from env.closedloop import simulate_closed_loop
 
-################################################################################
-#                                Linear Controller                             #
-################################################################################
-
-@jax.jit
-def linear_control(state, w):
+@dataclass(frozen=True)
+class LinearController(Controller):
     """
-    Computes the control force f as a linear function of the current state:
-      f = w0*x + w1*cos(theta) + w2*sin(theta) + w3*x_dot + w4*theta_dot
+    Linear feedback controller: u = -K @ state
+    JIT compiled by default for performance.
     """
-    x, theta, x_dot, theta_dot = state
-    f = (w[0] * x
-         + w[1] * jnp.cos(theta)
-         + w[2] * jnp.sin(theta)
-         + w[3] * x_dot
-         + w[4] * theta_dot)
-    return f
+    K: jnp.ndarray  # Gain vector (5,) for [x, cos(θ), sin(θ), ẋ, θ̇]
+    
+    def __post_init__(self):
+        """Initialize JIT functions and validate dimensions."""
+        if self.K.shape != (5,):
+            raise ValueError(f"K must have shape (5,), got {self.K.shape}")
+        
+        # JIT compile force functions
+        object.__setattr__(self, '_jit_single', jax.jit(self._force_impl))
+        object.__setattr__(self, '_jit_batch', jax.jit(jax.vmap(self._force_impl, in_axes=(0, None))))
+        
+        super().__post_init__()
+    
+    def _force_impl(self, state: jnp.ndarray, t: float) -> jnp.ndarray:
+        """Core force computation."""
+        raw = -jnp.dot(self.K, state)
+        #  clip at ±100 N; adjust to taste
+        return jnp.clip(raw, -100.0, 100.0)
+    
+    def _force(self, state: jnp.ndarray, t: float) -> jnp.ndarray:
+        """Required by base Controller class."""
+        return self._jit_single(state, t)
+    
+    def __call__(self, state, t, profile=False):
+        """Main interface - JIT by default."""
+        if profile:
+            start_time = time.perf_counter()
+        
+        # Choose JIT function based on input shape
+        if state.ndim == 1:
+            force = self._jit_single(state, t)
+        else:
+            force = self._jit_batch(state, t)
+        
+        if profile:
+            jax.block_until_ready(force)
+            latency = time.perf_counter() - start_time
+            return force, latency
+        
+        return force
+    
+    def eager(self, state, t, profile=False):
+        """Non-JIT version for debugging."""
+        if profile:
+            start_time = time.perf_counter()
+        
+        if state.ndim == 1:
+            force = self._force_impl(state, t)
+        else:
+            force = jax.vmap(self._force_impl, in_axes=(0, None))(state, t)
+        
+        if profile:
+            latency = time.perf_counter() - start_time
+            return force, latency
+        
+        return force
 
-@partial(jax.jit, static_argnames=['t_span'])
-def compute_trajectory_cost(w, params, t_span, t, initial_state, Q):
-    """
-    Computes the trajectory cost for a single initial condition using the linear controller w.
-    Cost definition: 
-      J(w) = ∑ [ x_k^T Q x_k + f_k^2 ] * dt
-    """
-    def controller(state, time):
-        return linear_control(state, w)
 
-    solution = simulate_closed_loop(controller, params, t_span, t, initial_state)
-    states = solution.ys  # shape (len(t), 4)
-    dt = t[1] - t[0]
+def create_pd_controller(kp_pos=1.0, kd_pos=1.0, kp_angle=20.0, kd_angle=2.0):
+    """Create PD controller with specified gains."""
+    # Target: [x=0, cos(θ)=1, sin(θ)=0, ẋ=0, θ̇=0]
+    K = jnp.array([
+        kp_pos,    # x position
+        -kp_angle, # cos(θ) - negative to push toward 1
+        kp_angle,  # sin(θ) - positive to push toward 0  
+        kd_pos,    # ẋ damping
+        kd_angle   # θ̇ damping
+    ])
+    return LinearController(K=K)
 
-    def cost_step(state):
-        cost_state = state @ (Q @ state)
-        f_val = linear_control(state, w)
-        cost_control = f_val**2
-        return cost_state + cost_control
 
-    cost_trajectory = jax.vmap(cost_step)(states)
-    cost_total = jnp.sum(cost_trajectory) * dt
-    return cost_total, jax.vmap(lambda s: linear_control(s, w))(states)
+def create_zero_controller():
+    """Controller that outputs zero force."""
+    return LinearController(K=jnp.zeros(5))
 
-def train_linear_controller(params, t_span, t, initial_conditions, Q, opt_hparams):
-    """
-    Minimize mean( J(w) ) over multiple initial conditions.
-    """
-    lr = float(opt_hparams.get('lr', 1e-3))  # Force a Python float here.
-    w_init = jnp.array(opt_hparams.get('w_init', [0.0, 0.0, 0.0, 0.0, 0.0]))
-    max_iters = opt_hparams.get('max_iters', 2000)
-    tolerance = float(opt_hparams.get('tolerance', 1e-6))  # Convert tolerance to float
 
-    @jax.jit
-    def batched_cost(w):
-        def single_ic_cost(ic):
-            c, _ = compute_trajectory_cost(w, params, t_span, t, ic, Q)
-            return c
-        costs = jax.vmap(single_ic_cost)(initial_conditions)
-        return jnp.mean(costs)
-
-    optimizer = optax.adam(lr)
-    w = w_init
-    opt_state = optimizer.init(w)
-
-    cost_history = []
-    value_and_grad = jax.value_and_grad(batched_cost)
-
-    for i in range(max_iters):
-        cost_val, grads = value_and_grad(w)
-        cost_history.append(cost_val)
-
-        updates, opt_state = optimizer.update(grads, opt_state, w)
-        w = optax.apply_updates(w, updates)
-
-        if i % 100 == 0:
-            print(f"Iteration {i}, Cost: {cost_val:.6f}, Weights: {w}")
-
-        if cost_val < tolerance:
-            print(f"Converged at iteration {i}")
-            break
-
-    return w, cost_history
+def analyze_controller_gains(controller: LinearController) -> dict[str, float]:
+    """Analyze controller gain properties."""
+    K = controller.K
+    
+    return {
+        'position_gain': float(K[0]),
+        'cos_theta_gain': float(K[1]), 
+        'sin_theta_gain': float(K[2]),
+        'velocity_gain': float(K[3]),
+        'angular_velocity_gain': float(K[4]),
+        'total_magnitude': float(jnp.linalg.norm(K)),
+        'proportional_magnitude': float(jnp.linalg.norm(K[:3])),
+        'derivative_magnitude': float(jnp.linalg.norm(K[3:]))
+    }

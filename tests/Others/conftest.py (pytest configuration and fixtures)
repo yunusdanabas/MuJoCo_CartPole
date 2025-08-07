@@ -1,0 +1,8 @@
+import pytest
+
+@pytest.fixture
+def sample_fixture():
+    return "Hello, World!"
+
+def pytest_configure():
+    pytest.addoption("--myoption", action="store", default="default_value", help="My custom option")

@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 """
+env/benchmarks/cartpole_bench.py
+
 Cart-pole micro-benchmark.
 
 Examples
@@ -20,7 +22,7 @@ import psutil
 
 import jax
 import jax.numpy as jnp
-from env.cartpole import CartPoleParams, dynamics
+from env import CartPoleParams, dynamics  # Updated import
 
 # -----------------------------------------------------------------------------#
 # CLI                                                                           #

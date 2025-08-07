@@ -1,11 +1,9 @@
 """
-Closed-loop ODE wrappers for the cart-pole.
+env/closedloop.py
+Closed-loop cart-pole simulation using JAX + Diffrax.
 
-Key features:
-* Works with either 4- or 5-state encodings
-* Single-trajectory or batched roll-outs
-* JIT-compiled once; no Python in the step loop
-* Solver / tolerance kwargs surfaced for easy tuning
+State format: [x, cos(θ), sin(θ), ẋ, θ̇]
+Provides efficient ODE integration with automatic JIT compilation.
 """
 
 from __future__ import annotations
@@ -14,142 +12,148 @@ from typing import Callable, Sequence
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float
 from diffrax import Tsit5, ODETerm, SaveAt, diffeqsolve
 
 from .cartpole import CartPoleParams, dynamics
 
-# -----------------------------------------------------------------------------#
-# Internal helpers                                                              #
-# -----------------------------------------------------------------------------#
 
-def _make_ode_term(params: CartPoleParams, controller):
-    """Create an ODETerm whose rhs is JIT-compiled once."""
-    @partial(jax.jit, static_argnums=(2,))
-    def rhs(t, y, args):
-        p, ctrl = args
-        return dynamics(y, t, params=p, controller=ctrl)
+# --------------------------------------------------------------------------- #
+# JIT Compilation Cache                                                       #
+# --------------------------------------------------------------------------- #
+
+# Cache uses controller *identity* but we never JIT the RHS now
+_rhs_cache: dict[tuple[int, int], ODETerm] = {}
+
+
+def _get_rhs_term(params: CartPoleParams, controller) -> ODETerm:
+    """Return a cached ODETerm; no @jax.jit on the RHS."""
+    key = (id(params), id(controller))
+    if key not in _rhs_cache:
+        def rhs(t, y, _):
+            # Controller is an ordinary Python object; just call it
+            return dynamics(y, t, params=params, controller=controller)
+
+        _rhs_cache[key] = ODETerm(rhs)
+    return _rhs_cache[key]
+
+
+# --------------------------------------------------------------------------- #
+# Single Trajectory Simulation                                               #
+# --------------------------------------------------------------------------- #
+
+def simulate(
+    controller: Callable[[jnp.ndarray, float], float],
+    params: CartPoleParams,
+    t_span: tuple[float, float],
+    ts: Sequence[float],
+    y0: Float[Array, "5"],
+    *,
+    dt0: float = 1e-2,
+    max_steps: int = 10_000,
+):
+    """
+    Simulate cart-pole with given controller.
     
-    return ODETerm(rhs), (params, controller)
-
-
-def _solve_ode(term, rhs_args, t_span, ts, y0, dt0, max_steps, rtol, atol):
-    """Thin wrapper around diffeqsolve with sane defaults."""
+    Args:
+        controller: Control function (state, time) -> force
+        params: Physical parameters
+        t_span: Integration time (t_start, t_end)
+        ts: Time points to save solution
+        y0: Initial state [x, cos(θ), sin(θ), ẋ, θ̇]
+        dt0: Initial step size
+        max_steps: Maximum integration steps
+        
+    Returns:
+        Diffrax solution object
+    """
+    if y0.shape[-1] != 5:
+        raise ValueError(f"State must have shape (..., 5), got {y0.shape}")
+    
+    term = _get_rhs_term(params, controller)
+    
+    # Pass the controller via args so it's a *dynamic* value, not static
     return diffeqsolve(
-        term,
-        Tsit5(),
-        t0=t_span[0],
-        t1=t_span[1],
-        dt0=dt0,
+        term, Tsit5(),
+        t0=t_span[0], t1=t_span[1], dt0=dt0,
         y0=y0,
-        args=rhs_args,
-        rtol=rtol,
-        atol=atol,
+        args=None,                 # rhs ignores args; that's fine
         max_steps=max_steps,
-        saveat=SaveAt(ts=ts),
+        saveat=SaveAt(ts=ts)
     )
 
-# -----------------------------------------------------------------------------#
-# Public API                                                                    #
-# -----------------------------------------------------------------------------#
 
-def simulate(controller: Callable[[jnp.ndarray, float], float],
-             params: CartPoleParams,
-             t_span: tuple[float, float],
-             ts: Sequence[float],
-             initial_state: jnp.ndarray,
-             *,
-             dt0: float = 1e-2,
-             max_steps: int = 10_000,
-             rtol: float = 1e-6,
-             atol: float = 1e-8):
+# --------------------------------------------------------------------------- #
+# Batched Simulation                                                          #
+# --------------------------------------------------------------------------- #
+
+def simulate_batch(
+    controller: Callable[[jnp.ndarray, float], float],
+    params: CartPoleParams,
+    t_span: tuple[float, float],
+    ts: Sequence[float],
+    y0s: Float[Array, "batch 5"],
+    **kwargs
+):
     """
-    Simulate **one** cart-pole trajectory.
-
-    Parameters
-    ----------
-    controller : Callable
-        Pure-JAX callable `u = controller(state, t)`
-    params : CartPoleParams
-        Physical parameters
-    t_span : tuple
-        (t0, t1) in seconds
-    ts : Sequence
-        1-D array of sampling times (must lie inside `t_span`)
-    initial_state : array
-        Shape (state_dim,) array (either 4 or 5 dims)
+    Simulate multiple cart-pole trajectories in parallel.
+    
+    Args:
+        controller: Control function (state, time) -> force
+        params: Physical parameters (shared across all trajectories)
+        t_span: Integration time span (t_start, t_end)
+        ts: Time points where solution is saved
+        y0s: Batch of initial states, shape (batch_size, 5)
+        **kwargs: Additional arguments passed to simulate()
+        
+    Returns:
+        Batched diffrax solution with shape (batch_size, ...)
     """
-    term, rhs_args = _make_ode_term(params, controller)
-    return _solve_ode(term, rhs_args, t_span, ts, initial_state,
-                      dt0, max_steps, rtol, atol)
+    # Validate batch initial states format
+    if y0s.shape[-1] != 5:
+        raise ValueError(f"Expected batch initial states format (batch, 5), got shape {y0s.shape}")
+    
+    sim_fn = partial(simulate, controller, params, t_span, ts, **kwargs)
+    return jax.vmap(sim_fn)(y0s)
 
 
-def simulate_batch(controller: Callable[[jnp.ndarray, float], float],
-                   params: CartPoleParams,
-                   t_span: tuple[float, float],
-                   ts: Sequence[float],
-                   initial_states: jnp.ndarray,
-                   **kwargs):
+# --------------------------------------------------------------------------- #
+# Utility Functions                                                           #
+# --------------------------------------------------------------------------- #
+
+def create_time_grid(t_span: tuple[float, float], dt: float) -> jnp.ndarray:
+    """Create uniform time grid for simulation."""
+    return jnp.arange(t_span[0], t_span[1] + dt/2, dt)
+
+
+def extract_trajectory(solution, component: str = "all") -> jnp.ndarray:
     """
-    Vectorised rollout of *N* independent environments in parallel.
-
-    Parameters
-    ----------
-    initial_states : array
-        Array with shape `(N, state_dim)`
+    Extract specific components from simulation trajectory.
+    
+    Args:
+        solution: Diffrax solution object
+        component: Which component to extract:
+            - "all": Full state trajectory (default)
+            - "position": Cart position (x)
+            - "angle": Reconstructed angle θ = atan2(sin(θ), cos(θ))
+            - "velocity": Cart velocity (ẋ)
+            - "angular_velocity": Pole angular velocity (θ̇)
+            
+    Returns:
+        Extracted trajectory component(s)
     """
-    # Compile once, then vmap over the batch axis
-    single_sim = partial(simulate, controller, params, t_span, ts, **kwargs)
-    return jax.vmap(single_sim)(initial_states)
-
-
-# -----------------------------------------------------------------------------#
-# Legacy compatibility                                                          #
-# -----------------------------------------------------------------------------#
-
-def simulate_closed_loop(controller, params, t_span, t, initial_state=None):
-    """Original 4-state simulation (for LQR comparison)."""
-    if initial_state is None:
-        initial_state = jnp.zeros(4)
+    states = solution.ys  # Shape: (time_steps, 5)
     
-    # Convert old parameter format if needed
-    if isinstance(params, (tuple, list)):
-        mc, mp, l, g = params
-        params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
-    
-    return simulate(controller, params, t_span, t, initial_state)
-
-
-def simulate_closed_loop_nn(controller, params, t_span, t, initial_state=None):
-    """Enhanced NN-compatible simulation with 5-element state."""
-    if initial_state is None:
-        initial_state = jnp.array([0.0, -1.0, 0.0, 0.0, 0.0])  # downward position
-    
-    # Convert old parameter format if needed
-    if isinstance(params, (tuple, list)):
-        mc, mp, l, g = params
-        params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
-    
-    return simulate(controller, params, t_span, t, initial_state)
-
-
-# -----------------------------------------------------------------------------#
-# Quick sanity check                                                            #
-# -----------------------------------------------------------------------------#
-
-if __name__ == "__main__":
-    # Zero force controller
-    null_ctrl = lambda s, t: 0.0
-
-    p = CartPoleParams()
-    t_grid = jnp.linspace(0.0, 2.0, 201)
-
-    # Single run
-    sol = simulate(null_ctrl, p, (0.0, 2.0), t_grid,
-                   initial_state=jnp.array([0.0, jnp.pi - 0.01, 0.0, 0.0]))
-    print("Single-traj OK, shape:", sol.ys.shape)
-
-    # Batched run
-    init = jnp.stack([jnp.array([0., jnp.pi,  0., 0.]),
-                      jnp.array([0., 0.,      0., 0.])])
-    sol_b = simulate_batch(null_ctrl, p, (0.0, 2.0), t_grid, init)
-    print("Batch-traj OK, shape:", sol_b.ys.shape)
+    if component == "all":
+        return states
+    elif component == "position":
+        return states[:, 0]  # x
+    elif component == "angle":
+        cos_th, sin_th = states[:, 1], states[:, 2]
+        return jnp.arctan2(sin_th, cos_th)  # Reconstruct θ
+    elif component == "velocity":
+        return states[:, 3]  # ẋ
+    elif component == "angular_velocity":
+        return states[:, 4]  # θ̇
+    else:
+        raise ValueError(f"Unknown component '{component}'. Use 'all', 'position', 'angle', 'velocity', or 'angular_velocity'")
