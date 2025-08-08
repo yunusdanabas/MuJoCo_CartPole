@@ -28,7 +28,7 @@ def test_energy_conservation():
     """No-control dynamics should conserve mechanical energy."""
     params = CartPoleParams()
     dt = 0.01
-    state = jnp.array([0.0, jnp.pi - 0.1, 0.0, 0.0])  # near-upright 4-state
+    state = jnp.array([0.0, jnp.pi - 0.1, 0.0, 0.0, 0.0])  # near-upright 5-state
 
     e0 = float(total_energy(state, params))
     for _ in range(1_000):
@@ -46,7 +46,7 @@ def test_memory_regression():
         return  # Skip on CI
         
     params, dt, steps = CartPoleParams(), 0.001, 100_000
-    state = jnp.zeros(4)
+    state = jnp.zeros(5)
     proc = psutil.Process(os.getpid())
 
     tracemalloc.start()

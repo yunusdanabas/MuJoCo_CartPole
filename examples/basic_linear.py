@@ -16,7 +16,7 @@ def main():
     initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
     initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
 
-    config = BasicTrainingConfig(learning_rate=0.02, num_iterations=50, trajectory_length=2.0)
+    config = BasicTrainingConfig(learning_rate=0.001, num_iterations=1000, trajectory_length=2.0)
     controller, history = train_linear_controller(initial_K, initial_state, config)
 
     print("Initial cost:", history.costs[0])
