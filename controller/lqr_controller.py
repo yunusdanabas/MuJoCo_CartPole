@@ -77,7 +77,7 @@ def _lqr_gain(A, B, Q, R):
 
 
 # --------------------------------------------------------------------- class
-@dataclass
+@dataclass(frozen=True)
 class LQRController(Controller):
     K: jnp.ndarray                # shape (1,4) or (4,)
 

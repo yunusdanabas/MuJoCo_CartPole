@@ -38,7 +38,7 @@ def _build_mlp(in_dim, hidden_dims=(64, 64), *, key):
 
 
 # ------------------------------------------------------------------ class
-@dataclass
+@dataclass(frozen=True)
 class NNController(Controller):
     net: eqx.Module = None
 

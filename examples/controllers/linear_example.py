@@ -28,11 +28,9 @@ def basic_training_example():
     print("=" * 50)
     
     try:
-        # Setup
-        initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
+        # --- plain numerical vector OR optional warm-start -----------
         initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
-        
-        print(f"Initial gains: {initial_K}")
+        # leave initial_K=None → kicks in only if config.lqr_warm_start
         print(f"Initial state: {initial_state}")
         
         # Fast training configuration
@@ -43,18 +41,12 @@ def basic_training_example():
             state_weight=1.0,
             control_weight=0.1,
             optimizer='adam',
-            verbose=True
+            batch_size=32,
+            lr_schedule='cosine',
+            lqr_warm_start=True,    # << enable warm-start here
+            verbose=True,
         )
-        
-        # Validate setup
-        try:
-            validate_linear_training_setup(initial_K, initial_state, config)
-            print("Setup validation passed")
-        except Exception as e:
-            print(f"Validation warning: {e}")
-            
-        # Train controller
-        controller, history = train_linear_controller(initial_K, initial_state, config)
+        controller, history = train_linear_controller(None, initial_state, config)
         
         if controller is None or history is None or len(history.costs) == 0:
             print("Training failed")
@@ -63,8 +55,8 @@ def basic_training_example():
         # Results
         print_training_summary(history, config)
         print(f"\nGain Comparison:")
-        print(f"  Initial: {initial_K}")
-        print(f"  Final:   {controller.K}")
+        # If warm-start off, initial_K prints user-supplied vector
+        print(f"  Final:        {controller.K}")
         
         # Test JIT vs eager mode
         print("\nTesting JIT vs eager mode...")
