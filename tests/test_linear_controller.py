@@ -2,7 +2,7 @@
 import jax.numpy as jnp
 import pytest
 from controller.linear_controller import LinearController, create_pd_controller, create_zero_controller
-from lib.training.basic_training import BasicTrainingConfig, train_linear_controller
+from lib.training.linear_training import LinearTrainingConfig, train_linear_controller
 
 
 def test_linear_controller_response():
@@ -229,11 +229,11 @@ def test_physical_bounds():
         assert jnp.abs(force) < 100.0  # Reasonable force limit
 
 
-def test_basic_training_path():
+def test_linear_training_path():
     """Ensure basic training pipeline produces finite cost."""
     initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
     initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
-    config = BasicTrainingConfig(num_iterations=5, trajectory_length=1.0, learning_rate=0.02)
+    config = LinearTrainingConfig(num_iterations=5, trajectory_length=1.0, learning_rate=0.02)
     _, history = train_linear_controller(initial_K, initial_state, config)
     assert len(history.costs) > 0
     assert jnp.isfinite(jnp.array(history.costs)).all()

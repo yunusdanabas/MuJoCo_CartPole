@@ -6,12 +6,12 @@ import time
 
 import jax.numpy as jnp
 
-from lib.training.advanced_training import AdvancedTrainingConfig, train_linear_controller
+from lib.training.linear_training import LinearTrainingConfig, train_linear_controller
 
 
 def test_advanced_training_runs_fast():
     initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
-    config = AdvancedTrainingConfig(
+    config = LinearTrainingConfig(
         num_iterations=5,
         trajectory_length=1.0,
         batch_size=4,

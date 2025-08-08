@@ -1,4 +1,4 @@
-"""Advanced training utilities for linear controllers."""
+"""Unified training utilities for linear controllers with optional advanced features."""
 
 from __future__ import annotations
 
@@ -20,19 +20,19 @@ from ._common import TARGET, _trajectory_cost_impl
 
 
 @dataclass
-class AdvancedTrainingConfig:
-    """Configuration with optional advanced features."""
+class LinearTrainingConfig:
+    """Configuration for linear controller training with optional advanced features."""
 
     learning_rate: float = 0.01
-    num_iterations: int = 500
-    trajectory_length: float = 5.0
+    num_iterations: int = 100
+    trajectory_length: float = 3.0
     batch_size: int = 1
     perturb_std: float = 0.0
     lr_schedule: str = "none"  # 'none' | 'cosine' | 'step'
     stability_weight: float = 0.0
     seed: int = 0
     lqr_warm_start: bool = False
-    optimizer: str = "adam"
+    optimizer: str = "sgd"
 
 
 def _four_to_five(v):
@@ -56,7 +56,9 @@ def _make_loss_fn(
 
         sol = simulate_batch(ctrl, params, (ts[0], ts[-1]), ts, batch_states)
         bad = ~jnp.all(jnp.isfinite(sol.ys))
-        cost = jnp.mean(jax.vmap(lambda tr: _trajectory_cost_impl(tr, K, Q, R, dt))(sol.ys))
+        cost = jnp.mean(
+            jax.vmap(lambda tr: _trajectory_cost_impl(tr, K, Q, R, dt))(sol.ys)
+        )
 
         if stability_weight > 0.0:
             A, B = _linearise(params)
@@ -73,7 +75,7 @@ def _make_loss_fn(
 def train_linear_controller(
     initial_K: jnp.ndarray | None,
     initial_state: jnp.ndarray,
-    config: AdvancedTrainingConfig = AdvancedTrainingConfig(),
+    config: LinearTrainingConfig = LinearTrainingConfig(),
     *,
     Q: jnp.ndarray | None = None,
     params: CartPoleParams = CartPoleParams(),
@@ -101,8 +103,12 @@ def train_linear_controller(
 
     schedules = {
         "none": config.learning_rate,
-        "cosine": optax.cosine_decay_schedule(config.learning_rate, config.num_iterations),
-        "step": optax.piecewise_constant_schedule(config.learning_rate, {config.num_iterations // 2: 0.1}),
+        "cosine": optax.cosine_decay_schedule(
+            config.learning_rate, config.num_iterations
+        ),
+        "step": optax.piecewise_constant_schedule(
+            config.learning_rate, {config.num_iterations // 2: 0.1}
+        ),
     }
     lr_schedule = schedules[config.lr_schedule]
     optimizers = {"adam": optax.adam, "sgd": optax.sgd, "rmsprop": optax.rmsprop}
@@ -187,8 +193,7 @@ def grid_search_linear_gains(
 
 
 __all__ = [
-    "AdvancedTrainingConfig",
+    "LinearTrainingConfig",
     "train_linear_controller",
     "grid_search_linear_gains",
 ]
-

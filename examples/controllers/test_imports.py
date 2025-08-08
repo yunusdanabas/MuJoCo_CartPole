@@ -19,12 +19,12 @@ def test_lib_imports():
     
     # Test training imports
     try:
-        from lib.training.advanced_training import (
+        from lib.training.linear_training import (
             train_linear_controller,
             grid_search_linear_gains,
-            AdvancedTrainingConfig,
+            LinearTrainingConfig,
         )
-        print("✓ lib.training.advanced_training imports successful")
+        print("✓ lib.training.linear_training imports successful")
     except ImportError as e:
         print(f"✗ lib.training.linear_training import error: {e}")
         return False
@@ -83,8 +83,7 @@ def test_file_existence():
     import os
     
     files_to_check = [
-        "lib/training/basic_training.py",
-        "lib/training/advanced_training.py",
+        "lib/training/linear_training.py",
         "lib/stability.py",
         "lib/training_utils.py",
         "lib/cost_functions.py",
@@ -108,7 +107,7 @@ def test_basic_functionality():
     print("\nTesting basic functionality...")
     try:
         import jax.numpy as jnp
-        from lib.training.basic_training import BasicTrainingConfig
+        from lib.training.linear_training import LinearTrainingConfig
         
         # Test array creation
         K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
@@ -116,8 +115,8 @@ def test_basic_functionality():
         print("✓ JAX arrays created successfully")
         
         # Test config creation
-        config = BasicTrainingConfig()
-        print("✓ BasicTrainingConfig created successfully")
+        config = LinearTrainingConfig()
+        print("✓ LinearTrainingConfig created successfully")
         print(f"  Default learning_rate: {config.learning_rate}")
         print(f"  Default num_iterations: {config.num_iterations}")
         
