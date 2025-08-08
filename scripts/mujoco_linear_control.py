@@ -23,7 +23,7 @@ except ImportError:
     mujoco_viewer = None
 
 from controller.linear_controller import LinearController
-from lib.training.advanced_training import train_linear_controller
+from lib.training.linear_training import train_linear_controller
 
 # Set up configuration
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
@@ -90,7 +90,7 @@ def main():
     # 1. TRAIN OR LOAD THE LINEAR CONTROLLER
     ###############################################################################
     from env.cartpole import CartPoleParams
-    from lib.training.advanced_training import AdvancedTrainingConfig
+    from lib.training.linear_training import LinearTrainingConfig
     from lib.cost_functions import create_cost_matrices
     
     # Cache file path for controller weights
@@ -125,7 +125,7 @@ def main():
         # Option A: user supplies explicit K
         initial_K = None          # set to vector to BYPASS warm-start
 
-        config = AdvancedTrainingConfig(
+        config = LinearTrainingConfig(
             learning_rate=lin_cfg.get('lr', 0.01),
             num_iterations=lin_cfg.get('max_iters', 300),
             trajectory_length=3.0,

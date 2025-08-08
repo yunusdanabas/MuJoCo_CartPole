@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from lib.training.advanced_training import AdvancedTrainingConfig, train_linear_controller
+from lib.training.linear_training import LinearTrainingConfig, train_linear_controller
 from controller.lqr_controller import _linearise
 from env.cartpole import CartPoleParams
 
@@ -22,7 +22,7 @@ def main():
 
     iters = 20 if args.fast else 100
 
-    config = AdvancedTrainingConfig(
+    config = LinearTrainingConfig(
         learning_rate=0.02,
         num_iterations=iters,
         trajectory_length=2.0,

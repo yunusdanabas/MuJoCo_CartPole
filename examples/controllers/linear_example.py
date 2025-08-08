@@ -11,15 +11,15 @@ import jax.numpy as jnp
 import time
 import traceback
 
-from lib.training.basic_training import (
-    train_linear_controller as basic_train,
-    BasicTrainingConfig,
-)
-from lib.training.advanced_training import (
-    train_linear_controller as advanced_train,
+from lib.training.linear_training import (
+    train_linear_controller,
     grid_search_linear_gains,
-    AdvancedTrainingConfig,
+    LinearTrainingConfig,
 )
+
+basic_train = train_linear_controller
+advanced_train = train_linear_controller
+
 from lib.stability import quick_stability_check
 from controller.linear_controller import LinearController
 
@@ -33,7 +33,7 @@ def basic_training_example():
         initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
         initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
 
-        config = BasicTrainingConfig(learning_rate=0.02, num_iterations=50, trajectory_length=2.0)
+        config = LinearTrainingConfig(learning_rate=0.02, num_iterations=50, trajectory_length=2.0)
         controller, history = basic_train(initial_K, initial_state, config)
 
         print("Cost trend:")
@@ -104,13 +104,11 @@ def multi_scenario_training():
         best_initial = grid_search_linear_gains(scenarios[0], n_points=2)
         
         # Robust training config
-        config = AdvancedTrainingConfig(
+        config = LinearTrainingConfig(
             learning_rate=0.005,
             num_iterations=50,
             trajectory_length=3.0,
-            control_weight=0.05,
             optimizer='adam',
-            verbose=True
         )
 
         controller, history = advanced_train(best_initial.K, scenarios[2], config)
@@ -140,9 +138,9 @@ def comparison_study():
         initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
         
         configs = [
-            ('Fast', AdvancedTrainingConfig(learning_rate=0.02, num_iterations=20)),
-            ('Medium', AdvancedTrainingConfig(learning_rate=0.01, num_iterations=40)),
-            ('Careful', AdvancedTrainingConfig(learning_rate=0.005, num_iterations=60))
+            ('Fast', LinearTrainingConfig(learning_rate=0.02, num_iterations=20)),
+            ('Medium', LinearTrainingConfig(learning_rate=0.01, num_iterations=40)),
+            ('Careful', LinearTrainingConfig(learning_rate=0.005, num_iterations=60))
         ]
         
         results = {}
@@ -283,13 +281,11 @@ def interactive_example():
         initial_K = jnp.array([1.5, -15.0, 15.0, 1.2, 1.2])
         initial_state = jnp.array([0.05, 0.98, 0.2, 0.0, 0.0])
         
-        config = AdvancedTrainingConfig(
+        config = LinearTrainingConfig(
             learning_rate=0.02,
             num_iterations=50,
             trajectory_length=3.0,
-            control_weight=0.08,
             optimizer='adam',
-            verbose=True
         )
 
         controller, history = advanced_train(initial_K, initial_state, config)
