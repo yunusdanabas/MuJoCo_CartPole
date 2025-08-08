@@ -1,6 +1,5 @@
-"""
-Test script to identify import issues for linear_example.py
-"""
+# ruff: noqa
+"""Test script to identify import issues for linear_example.py."""
 
 def test_basic_imports():
     """Test basic Python and JAX imports"""
@@ -20,13 +19,12 @@ def test_lib_imports():
     
     # Test training imports
     try:
-        from lib.training.linear_training import (
-            train_linear_controller, 
+        from lib.training.advanced_training import (
+            train_linear_controller,
             grid_search_linear_gains,
-            LinearTrainingConfig,
-            validate_linear_training_setup
+            AdvancedTrainingConfig,
         )
-        print("✓ lib.training.linear_training imports successful")
+        print("✓ lib.training.advanced_training imports successful")
     except ImportError as e:
         print(f"✗ lib.training.linear_training import error: {e}")
         return False
@@ -85,13 +83,14 @@ def test_file_existence():
     import os
     
     files_to_check = [
-        "lib/training/linear_training.py",
-        "lib/stability.py", 
+        "lib/training/basic_training.py",
+        "lib/training/advanced_training.py",
+        "lib/stability.py",
         "lib/training_utils.py",
         "lib/cost_functions.py",
         "controller/linear_controller.py",
         "env/cartpole.py",
-        "env/closedloop.py"
+        "env/closedloop.py",
     ]
     
     missing_files = []
@@ -109,7 +108,7 @@ def test_basic_functionality():
     print("\nTesting basic functionality...")
     try:
         import jax.numpy as jnp
-        from lib.training.linear_training import LinearTrainingConfig
+        from lib.training.basic_training import BasicTrainingConfig
         
         # Test array creation
         K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
@@ -117,8 +116,8 @@ def test_basic_functionality():
         print("✓ JAX arrays created successfully")
         
         # Test config creation
-        config = LinearTrainingConfig()
-        print("✓ LinearTrainingConfig created successfully")
+        config = BasicTrainingConfig()
+        print("✓ BasicTrainingConfig created successfully")
         print(f"  Default learning_rate: {config.learning_rate}")
         print(f"  Default num_iterations: {config.num_iterations}")
         
