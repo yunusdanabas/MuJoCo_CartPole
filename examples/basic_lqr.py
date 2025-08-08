@@ -14,8 +14,13 @@ from env.helpers import four_to_five
 from controller.lqr_controller import LQRController
 from lib.visualizer import plot_trajectory
 
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 def main():
+
+    print("Starting LQR simulation...")
+
     params = CartPoleParams()
 
     # Time grid
@@ -32,7 +37,7 @@ def main():
     # Simulate and plot
     sol = simulate(lqr, params, t_span, ts, y0)
     plot_trajectory(sol.ys, sol.ts, title="LQR Trajectory", save_path="trajectory_lqr.png")
-
+    print("LQR simulation completed.")
 
 if __name__ == "__main__":
     main()

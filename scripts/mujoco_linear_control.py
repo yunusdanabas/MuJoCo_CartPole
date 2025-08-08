@@ -118,7 +118,13 @@ def main():
         params = CartPoleParams(mc=1.0, mp=1.0, l=1.0, g=9.81)
 
         # Create cost matrix
-        Q = create_cost_matrices(pos_weight=50.0, angle_weight=300.0, vel_weight=5.0, angvel_weight=20.0)
+        Q = create_cost_matrices(
+            pos_weight=50.0,
+            cos_theta_weight=300.0,
+            sin_theta_weight=300.0,
+            vel_weight=5.0,
+            angvel_weight=20.0
+        )
 
         # Training hyperparameters
         lin_cfg = _CFG.get("linear_training", {})
@@ -130,7 +136,7 @@ def main():
             num_iterations=lin_cfg.get('max_iters', 300),
             trajectory_length=3.0,
             batch_size=lin_cfg.get('batch_size', 32),
-            lr_schedule=lin_cfg.get('lr_schedule', 'cosine'),
+            lr_schedule=lin_cfg.get('lr_schedule', 'none'),
             stability_weight=lin_cfg.get('stability_weight', 0.0),
             perturb_std=lin_cfg.get('perturb_std', 0.05),
             seed=lin_cfg.get('seed', 0),
@@ -142,8 +148,8 @@ def main():
             initial_K,                    # None → optional warm-start
             jnp.zeros(4),
             config,
-            Q,
-            params,
+            Q=Q,
+            params=params,
         )
         print("\nTraining completed.")
         print("Optimized Weights:", ctrl.K)
@@ -250,11 +256,18 @@ def main():
         Unified controller using the same LinearController interface.
         Returns force and state components for logging.
         """
-        # Read sensor data
-        x = data.sensordata[sensor_idx['cart_pos']]
-        x_dot = data.sensordata[sensor_idx['cart_vel']]
-        raw_theta = data.sensordata[sensor_idx['pole_ang']]
-        theta_dot = data.sensordata[sensor_idx['pole_angvel']]
+        if model.nsensor > 0:
+            # use sensordata if defined
+            x         = data.sensordata[sensor_idx['cart_pos']]
+            x_dot     = data.sensordata[sensor_idx['cart_vel']]
+            raw_theta = data.sensordata[sensor_idx['pole_ang']]
+            theta_dot = data.sensordata[sensor_idx['pole_angvel']]
+        else:
+            # fallback to qpos/qvel for minimal model
+            x         = data.qpos[cart_pos_idx]
+            raw_theta = data.qpos[pole_ang_idx]
+            x_dot     = data.qvel[cart_pos_idx]
+            theta_dot = data.qvel[pole_ang_idx]
         
         # Wrap angle to [-pi, pi] using JAX math to keep computation on device
         theta = jnp.mod(raw_theta + jnp.pi, 2 * jnp.pi) - jnp.pi
@@ -341,7 +354,7 @@ def main():
 
         # Plot training cost
         plt.figure()
-        plt.plot(np.array(cost_history), marker='o')
+        plt.plot(np.array(cost_history.costs), marker='o')
         plt.title("Linear Controller Training Cost")
         plt.xlabel("Iteration (checkpoints)")
         plt.ylabel("Cost")

@@ -14,6 +14,8 @@ from env.closedloop import simulate, create_time_grid
 from controller.nn_controller import NNController
 from lib.visualizer import plot_trajectory
 
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 def main():
     params = CartPoleParams()

@@ -1,4 +1,4 @@
-model_xml: cart_pole.xml
+model_xml: cart_pole_minimal.xml
 sim_duration: 30.0
 time_step: 0.01
 nn_model_path: saved_models/nn_controller.eqx
