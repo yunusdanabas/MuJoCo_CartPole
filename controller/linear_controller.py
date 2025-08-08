@@ -15,12 +15,9 @@ from controller.base import Controller
 
 @dataclass(frozen=True)
 class LinearController(Controller):
-    """
-    Linear feedback controller: u = -K @ state
-    JIT compiled by default for performance.
-    """
-    K: jnp.ndarray  # Gain vector (5,) for [x, cos(θ), sin(θ), ẋ, θ̇]
-    
+    """Linear feedback controller: u = -K · state (clipped)."""
+    K: jnp.ndarray          # shape (5,)
+
     def __post_init__(self):
         """Initialize JIT functions and validate dimensions."""
         if self.K.shape != (5,):
@@ -33,9 +30,7 @@ class LinearController(Controller):
         super().__post_init__()
     
     def _force_impl(self, state: jnp.ndarray, t: float) -> jnp.ndarray:
-        """Core force computation."""
         raw = -jnp.dot(self.K, state)
-        #  clip at ±100 N; adjust to taste
         return jnp.clip(raw, -100.0, 100.0)
     
     def _force(self, state: jnp.ndarray, t: float) -> jnp.ndarray:

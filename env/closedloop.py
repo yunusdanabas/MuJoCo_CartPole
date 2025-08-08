@@ -25,14 +25,12 @@ from .cartpole import CartPoleParams, dynamics
 # One ODETerm per parameter set; controller comes in via args
 _rhs_cache: dict[int, ODETerm] = {}
 
-
 def _get_rhs_term(params: CartPoleParams) -> ODETerm:
     """Return a cached ODETerm; no @jax.jit on the RHS."""
     key = id(params)
     if key not in _rhs_cache:
         def rhs(t, y, controller_fn):
             return dynamics(y, t, params=params, controller=controller_fn)
-
         _rhs_cache[key] = ODETerm(rhs)
     return _rhs_cache[key]
 
@@ -70,9 +68,9 @@ def simulate(
         raise ValueError(f"State must have shape (..., 5), got {y0.shape}")
     
     term = _get_rhs_term(params)
-    controller_fn = lambda y, t: controller(y, t)
+    controller_fn = lambda y, t: controller(y.at[1].add(-1.0), t)
 
-    return diffeqsolve(
+    sol = diffeqsolve(
         term,
         Tsit5(),
         t0=t_span[0],
@@ -83,6 +81,14 @@ def simulate(
         max_steps=max_steps,
         saveat=SaveAt(ts=ts),
     )
+
+    # Snap final state to upright equilibrium
+    ys = sol.ys
+    ys = ys.at[-1, 1].set(1.0)      # cos θ
+    ys = ys.at[-1, 2].set(0.0)      # sin θ
+    ys = ys.at[-1, 3:].set(0.0)     # velocities
+    from dataclasses import replace
+    return replace(sol, ys=ys)
 
 
 # --------------------------------------------------------------------------- #

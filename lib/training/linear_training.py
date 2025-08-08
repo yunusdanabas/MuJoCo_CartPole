@@ -17,7 +17,6 @@ from controller.linear_controller import LinearController
 from env.closedloop import simulate
 from env.cartpole import CartPoleParams
 from lib.cost_functions import create_cost_matrices, compute_trajectory_cost
-from lib.stability import quick_stability_check
 from lib.training_utils import BaseTrainingConfig, TrainingHistory
 
 
@@ -29,16 +28,16 @@ class LinearTrainingConfig(BaseTrainingConfig):
     optimizer: str = 'adam'
 
 
+TARGET = jnp.array([0., 1., 0., 0., 0.])
+
+
 @jax.jit
-def _trajectory_cost_impl(trajectory, K, Q, R, dt):
-    """Helper function to compute trajectory cost."""
-    forces = -trajectory @ K
-    target = jnp.array([0., 1., 0., 0., 0.])
-    errs   = trajectory - target
-    state_cost = jnp.einsum('ij,jk,ik->i', errs, Q, errs)
+def _trajectory_cost_impl(traj, K, Q, R, dt):
+    err    = traj - TARGET
+    forces = -(err @ K)
+    state_cost = jnp.einsum('ij,jk,ik->i', err, Q, err)
     ctrl_cost  = R * forces**2
     return dt * jnp.sum(state_cost + ctrl_cost)
-
 
 
 def _make_loss_fn(
@@ -48,13 +47,15 @@ def _make_loss_fn(
     R: float,
     params: CartPoleParams,
 ):
-    """Return a *non-jitted* closure suitable for jax.grad."""
+    """Return a closure suitable for jax.grad."""
     dt = float(ts[1] - ts[0])
 
     def loss(K):
-        # build controller everytime so it's differentiable in K
-        ctrl = LinearController(K=K).jit()
-        sol  = simulate(ctrl, params, (ts[0], ts[-1]), ts, initial_state)
+        def ctrl(y, t):
+            err = y - TARGET
+            return jnp.clip(-(err @ K), -100.0, 100.0)
+
+        sol = simulate(ctrl, params, (ts[0], ts[-1]), ts, initial_state)
 
         bad = (
             (sol.ys is None) |
@@ -67,7 +68,7 @@ def _make_loss_fn(
             _trajectory_cost_impl(sol.ys, K, Q, R, dt)
         )
 
-    return loss  # no jax.jit here; grad() will trace it just fine
+    return loss
 
 
 def train_linear_controller(
@@ -99,7 +100,8 @@ def train_linear_controller(
         
         # Create loss function with pre-computed time grid
         loss_fn = _make_loss_fn(ts, initial_state, Q, config.control_weight, params)
-        grad_fn = jax.grad(loss_fn)  # no jit: shapes are fixed already
+        # Use value_and_grad for efficiency
+        value_and_grad = jax.jit(jax.value_and_grad(loss_fn))
         
         # Initial cost
         initial_cost = loss_fn(K)
@@ -115,11 +117,10 @@ def train_linear_controller(
         start_time = time.time()  # Start timing
         
         for i in range(config.num_iterations):
-            grads = grad_fn(K)
+            cost, grads = value_and_grad(K)
             updates, opt_state = optimizer.update(grads, opt_state)
             K = optax.apply_updates(K, updates)
             
-            cost = loss_fn(K)
             history.update(cost, K)
             
             if config.verbose and i % log_interval == 0:
