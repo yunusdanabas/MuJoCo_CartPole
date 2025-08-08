@@ -3,7 +3,6 @@
 
 import jax
 import jax.numpy as jnp
-import optax
 import numpy as np
 import time
 import warnings
@@ -24,7 +23,7 @@ except ImportError:
     mujoco_viewer = None
 
 from controller.linear_controller import LinearController
-from lib.training.linear_training import train_linear_controller
+from lib.training.advanced_training import train_linear_controller
 
 # Set up configuration
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
@@ -91,7 +90,8 @@ def main():
     # 1. TRAIN OR LOAD THE LINEAR CONTROLLER
     ###############################################################################
     from env.cartpole import CartPoleParams
-    from lib.training.linear_training import LinearTrainingConfig, create_cost_matrices
+    from lib.training.advanced_training import AdvancedTrainingConfig
+    from lib.cost_functions import create_cost_matrices
     
     # Cache file path for controller weights
     cache_path = Path(__file__).resolve().parent / "cached_controller.pkl"
@@ -120,24 +120,17 @@ def main():
         # Create cost matrix
         Q = create_cost_matrices(pos_weight=50.0, angle_weight=300.0, vel_weight=5.0, angvel_weight=20.0)
 
-        # Generate a single initial condition for training
-        key = jax.random.PRNGKey(42)
-        initial_state = jnp.array([0.1, 0.1, 0.0, 0.0])  # Small perturbation from equilibrium
-
         # Training hyperparameters
         lin_cfg = _CFG.get("linear_training", {})
         # Option A: user supplies explicit K
         initial_K = None          # set to vector to BYPASS warm-start
 
-        config = LinearTrainingConfig(
+        config = AdvancedTrainingConfig(
             learning_rate=lin_cfg.get('lr', 0.01),
             num_iterations=lin_cfg.get('max_iters', 300),
             trajectory_length=3.0,
-            state_weight=1.0,
-            control_weight=0.1,
-            convergence_tol=lin_cfg.get('tolerance', 1e-6),
             batch_size=lin_cfg.get('batch_size', 32),
-            lr_schedule='cosine',
+            lr_schedule=lin_cfg.get('lr_schedule', 'cosine'),
             stability_weight=lin_cfg.get('stability_weight', 0.0),
             perturb_std=lin_cfg.get('perturb_std', 0.05),
             seed=lin_cfg.get('seed', 0),

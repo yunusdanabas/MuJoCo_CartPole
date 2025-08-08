@@ -11,63 +11,44 @@ import jax.numpy as jnp
 import time
 import traceback
 
-from lib.training.linear_training import (
-    train_linear_controller, 
+from lib.training.basic_training import (
+    train_linear_controller as basic_train,
+    BasicTrainingConfig,
+)
+from lib.training.advanced_training import (
+    train_linear_controller as advanced_train,
     grid_search_linear_gains,
-    LinearTrainingConfig,
-    validate_linear_training_setup
+    AdvancedTrainingConfig,
 )
 from lib.stability import quick_stability_check
-from lib.training_utils import print_training_summary
 from controller.linear_controller import LinearController
 
 
 def basic_training_example():
-    """Basic linear controller training with optimized settings."""
+    """Basic linear controller training with minimal settings."""
     print("Basic Linear Controller Training Example")
     print("=" * 50)
-    
+
     try:
-        # --- plain numerical vector OR optional warm-start -----------
         initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
-        # leave initial_K=None → kicks in only if config.lqr_warm_start
-        print(f"Initial state: {initial_state}")
-        
-        # Fast training configuration
-        config = LinearTrainingConfig(
-            learning_rate=0.02,
-            num_iterations=100,
-            trajectory_length=2.0,
-            state_weight=1.0,
-            control_weight=0.1,
-            optimizer='adam',
-            batch_size=32,
-            lr_schedule='cosine',
-            lqr_warm_start=True,    # << enable warm-start here
-            verbose=True,
-        )
-        controller, history = train_linear_controller(None, initial_state, config)
-        
-        if controller is None or history is None or len(history.costs) == 0:
-            print("Training failed")
-            return None, None
-        
-        # Results
-        print_training_summary(history, config)
-        print(f"\nGain Comparison:")
-        # If warm-start off, initial_K prints user-supplied vector
-        print(f"  Final:        {controller.K}")
-        
-        # Test JIT vs eager mode
-        print("\nTesting JIT vs eager mode...")
+        initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
+
+        config = BasicTrainingConfig(learning_rate=0.02, num_iterations=50, trajectory_length=2.0)
+        controller, history = basic_train(initial_K, initial_state, config)
+
+        print("Cost trend:")
+        for i, c in enumerate(history.costs):
+            if i % 10 == 0 or i == len(history.costs) - 1:
+                print(f"  iter {i:02d}: {c:.6f}")
+
         test_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
         jit_force = controller(test_state, 0.0)
         eager_force = controller.eager(test_state, 0.0)
         print(f"JIT force: {jit_force}, Eager force: {eager_force}")
         print(f"Match: {jnp.allclose(jit_force, eager_force)}")
-        
+
         return controller, history
-        
+
     except Exception as e:
         print(f"Training failed: {e}")
         traceback.print_exc()
@@ -123,22 +104,19 @@ def multi_scenario_training():
         best_initial = grid_search_linear_gains(scenarios[0], n_points=2)
         
         # Robust training config
-        config = LinearTrainingConfig(
+        config = AdvancedTrainingConfig(
             learning_rate=0.005,
-            num_iterations=200,
+            num_iterations=50,
             trajectory_length=3.0,
             control_weight=0.05,
             optimizer='adam',
             verbose=True
         )
-        
-        # Train on challenging scenario
-        controller, history = train_linear_controller(
-            best_initial.K, scenarios[2], config
-        )
+
+        controller, history = advanced_train(best_initial.K, scenarios[2], config)
         
         # Test on all scenarios
-        print(f"\nPerformance Evaluation:")
+        print("\nPerformance Evaluation:")
         print(f"Gains: {controller.K}")
         
         for i, scenario in enumerate(scenarios):
@@ -162,16 +140,16 @@ def comparison_study():
         initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
         
         configs = [
-            ('Fast', LinearTrainingConfig(learning_rate=0.02, num_iterations=50)),
-            ('Medium', LinearTrainingConfig(learning_rate=0.01, num_iterations=100)),
-            ('Careful', LinearTrainingConfig(learning_rate=0.005, num_iterations=200))
+            ('Fast', AdvancedTrainingConfig(learning_rate=0.02, num_iterations=20)),
+            ('Medium', AdvancedTrainingConfig(learning_rate=0.01, num_iterations=40)),
+            ('Careful', AdvancedTrainingConfig(learning_rate=0.005, num_iterations=60))
         ]
         
         results = {}
         
         for name, config in configs:
             print(f"\nTesting {name} configuration...")
-            controller, history = train_linear_controller(initial_K, initial_state, config)
+            controller, history = advanced_train(initial_K, initial_state, config)
             
             if controller is not None and history is not None and len(history.costs) > 0:
                 results[name] = {
@@ -228,7 +206,7 @@ def jit_comparison_example():
         print("Running performance tests...")
         
         # Single state test
-        n_tests = 1000
+        n_tests = 100
         
         start_time = time.time()
         for _ in range(n_tests):
@@ -305,16 +283,16 @@ def interactive_example():
         initial_K = jnp.array([1.5, -15.0, 15.0, 1.2, 1.2])
         initial_state = jnp.array([0.05, 0.98, 0.2, 0.0, 0.0])
         
-        config = LinearTrainingConfig(
+        config = AdvancedTrainingConfig(
             learning_rate=0.02,
-            num_iterations=200,
+            num_iterations=50,
             trajectory_length=3.0,
             control_weight=0.08,
             optimizer='adam',
             verbose=True
         )
-        
-        controller, history = train_linear_controller(initial_K, initial_state, config)
+
+        controller, history = advanced_train(initial_K, initial_state, config)
         
         # Test challenging state
         test_state = jnp.array([0.2, 0.92, -0.39, 0.1, -0.1])
