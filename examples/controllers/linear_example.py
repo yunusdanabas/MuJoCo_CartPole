@@ -52,9 +52,7 @@ def basic_training_example():
             print("Setup validation passed")
         except Exception as e:
             print(f"Validation warning: {e}")
-        
-        print("Starting training...")
-        
+            
         # Train controller
         controller, history = train_linear_controller(initial_K, initial_state, config)
         

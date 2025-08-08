@@ -22,17 +22,16 @@ from .cartpole import CartPoleParams, dynamics
 # JIT Compilation Cache                                                       #
 # --------------------------------------------------------------------------- #
 
-# Cache uses controller *identity* but we never JIT the RHS now
-_rhs_cache: dict[tuple[int, int], ODETerm] = {}
+# One ODETerm per parameter set; controller comes in via args
+_rhs_cache: dict[int, ODETerm] = {}
 
 
-def _get_rhs_term(params: CartPoleParams, controller) -> ODETerm:
+def _get_rhs_term(params: CartPoleParams) -> ODETerm:
     """Return a cached ODETerm; no @jax.jit on the RHS."""
-    key = (id(params), id(controller))
+    key = id(params)
     if key not in _rhs_cache:
-        def rhs(t, y, _):
-            # Controller is an ordinary Python object; just call it
-            return dynamics(y, t, params=params, controller=controller)
+        def rhs(t, y, controller_fn):
+            return dynamics(y, t, params=params, controller=controller_fn)
 
         _rhs_cache[key] = ODETerm(rhs)
     return _rhs_cache[key]
@@ -70,16 +69,19 @@ def simulate(
     if y0.shape[-1] != 5:
         raise ValueError(f"State must have shape (..., 5), got {y0.shape}")
     
-    term = _get_rhs_term(params, controller)
-    
-    # Pass the controller via args so it's a *dynamic* value, not static
+    term = _get_rhs_term(params)
+    controller_fn = lambda y, t: controller(y, t)
+
     return diffeqsolve(
-        term, Tsit5(),
-        t0=t_span[0], t1=t_span[1], dt0=dt0,
+        term,
+        Tsit5(),
+        t0=t_span[0],
+        t1=t_span[1],
+        dt0=dt0,
         y0=y0,
-        args=None,                 # rhs ignores args; that's fine
+        args=controller_fn,   # dynamic argument → no recompilation
         max_steps=max_steps,
-        saveat=SaveAt(ts=ts)
+        saveat=SaveAt(ts=ts),
     )
 
 

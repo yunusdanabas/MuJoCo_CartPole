@@ -6,6 +6,7 @@ Linear controller training using gradient-based optimization.
 
 from __future__ import annotations
 from dataclasses import dataclass
+import time  # Add this at the top with other imports
 
 import jax
 import jax.numpy as jnp
@@ -111,6 +112,7 @@ def train_linear_controller(
         
         # Training loop
         log_interval = max(10, config.num_iterations // 10)
+        start_time = time.time()  # Start timing
         
         for i in range(config.num_iterations):
             grads = grad_fn(K)
@@ -121,7 +123,8 @@ def train_linear_controller(
             history.update(cost, K)
             
             if config.verbose and i % log_interval == 0:
-                print(f"Iteration {i:3d}: Cost = {cost:.6f}")
+                elapsed = time.time() - start_time
+                print(f"Iteration {i:3d}: Cost = {cost:.6f} | Elapsed: {elapsed:.2f}s")
             
             if not jnp.isfinite(cost):
                 if config.verbose:

@@ -1,0 +1,22 @@
+name: me58006_project_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - matplotlib
+  - tqdm
+  - requests
+  - scikit-learn
+  - scipy
+  - pip
+  - jax
+  - jaxlib
+  - pip:
+      - equinox
+      - optax
+      - flax
+      - dm-haiku
+      - diffrax

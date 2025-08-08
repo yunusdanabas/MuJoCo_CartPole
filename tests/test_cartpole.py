@@ -37,6 +37,8 @@ def test_cartpole_performance():
     for _ in range(1000):
         dynamics(state, 0.0, params, lambda *_: 0.)
     elapsed = time.time() - start_time
+
+    #print(f"Elapsed time for 1000 dynamics evaluations: {elapsed:.4f} seconds")
     
     # Should complete 1000 dynamics evaluations in less than 1 second
     assert elapsed < 1.0
