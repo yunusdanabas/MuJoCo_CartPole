@@ -1,0 +1,38 @@
+"""
+examples/basic_lqr.py
+
+Run a basic LQR-controlled cart-pole rollout using the 5-state formulation
+[x, cos(theta), sin(theta), xdot, thdot] and save a plot to results/trajectory_lqr.png.
+"""
+from __future__ import annotations
+
+import jax.numpy as jnp
+
+from env.cartpole import CartPoleParams
+from env.closedloop import simulate, create_time_grid
+from env.helpers import four_to_five
+from controller.lqr_controller import LQRController
+from lib.visualizer import plot_trajectory
+
+
+def main():
+    params = CartPoleParams()
+
+    # Time grid
+    t_span = (0.0, 5.0)
+    ts = create_time_grid(t_span, dt=0.01)
+
+    # Initial state: small angle from upright, zero velocities (4D -> 5D)
+    init_4d = jnp.array([0.0, 0.1, 0.0, 0.0])
+    y0 = four_to_five(init_4d)
+
+    # LQR controller
+    lqr = LQRController.from_linearisation(params).jit()
+
+    # Simulate and plot
+    sol = simulate(lqr, params, t_span, ts, y0)
+    plot_trajectory(sol.ys, sol.ts, title="LQR Trajectory", save_path="trajectory_lqr.png")
+
+
+if __name__ == "__main__":
+    main()

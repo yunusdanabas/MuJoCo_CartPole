@@ -2,8 +2,9 @@
 env/closedloop.py
 Closed-loop cart-pole simulation using JAX + Diffrax.
 
-State format: [x, cos(θ), sin(θ), ẋ, θ̇]
-Provides efficient ODE integration with automatic JIT compilation.
+State format: [x, cos(θ), sin(θ), ẋ, θ̇] (5-state) by default.
+Also accepts 4-state initial conditions [x, θ, ẋ, θ̇] for legacy tests and
+returns 4-state trajectories in that case.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from jaxtyping import Array, Float
 from diffrax import Tsit5, ODETerm, SaveAt, diffeqsolve
 
 from .cartpole import CartPoleParams, dynamics
+from .helpers import four_to_five, five_to_four
 
 
 # --------------------------------------------------------------------------- #
@@ -24,6 +26,7 @@ from .cartpole import CartPoleParams, dynamics
 
 # One ODETerm per parameter set; controller comes in via args
 _rhs_cache: dict[int, ODETerm] = {}
+
 
 def _get_rhs_term(params: CartPoleParams) -> ODETerm:
     """Return a cached ODETerm; no @jax.jit on the RHS."""
@@ -51,24 +54,40 @@ def simulate(
 ):
     """
     Simulate cart-pole with given controller.
-    
+
     Args:
-        controller: Control function (state, time) -> force
+        controller: Control function (state, time) -> force. Accepts 4D or 5D
+                    depending on the state representation used by the solver.
         params: Physical parameters
         t_span: Integration time (t_start, t_end)
         ts: Time points to save solution
-        y0: Initial state [x, cos(θ), sin(θ), ẋ, θ̇]
+        y0: Initial state:
+            - 5D [x, cos(θ), sin(θ), ẋ, θ̇], or
+            - 4D [x, θ, ẋ, θ̇] (legacy tests)
         dt0: Initial step size
         max_steps: Maximum integration steps
-        
+
     Returns:
-        Diffrax solution object
+        Diffrax solution object with trajectory in the same dimensionality as y0
     """
-    if y0.shape[-1] != 5:
-        raise ValueError(f"State must have shape (..., 5), got {y0.shape}")
-    
-    term = _get_rhs_term(params)
-    controller_fn = lambda y, t: controller(y.at[1].add(-1.0), t)
+    is_four_state = (y0.shape[-1] == 4)
+    if is_four_state:
+        y0_5 = four_to_five(y0)
+    elif y0.shape[-1] == 5:
+        y0_5 = y0
+    else:
+        raise ValueError(f"State must have shape (..., 4) or (..., 5), got {y0.shape}")
+
+    # Build RHS that closes over controller to avoid non-hashable args
+    if is_four_state:
+        def rhs(t, y, _):
+            return dynamics(y, t, params=params, controller=lambda yy, tt: controller(five_to_four(yy), tt))
+    else:
+        def rhs(t, y, _):
+            y_ctrl = y.at[1].add(-1.0)  # shift cos component so upright is zero
+            return dynamics(y, t, params=params, controller=lambda yy, tt: controller(y_ctrl, tt))
+
+    term = ODETerm(rhs)
 
     sol = diffeqsolve(
         term,
@@ -76,17 +95,21 @@ def simulate(
         t0=t_span[0],
         t1=t_span[1],
         dt0=dt0,
-        y0=y0,
-        args=controller_fn,   # dynamic argument → no recompilation
+        y0=y0_5,
+        args=None,
         max_steps=max_steps,
         saveat=SaveAt(ts=ts),
     )
 
-    # Snap final state to upright equilibrium
+    # Post-process to requested representation
     ys = sol.ys
+    # Snap final state to upright equilibrium in 5D representation
     ys = ys.at[-1, 1].set(1.0)      # cos θ
     ys = ys.at[-1, 2].set(0.0)      # sin θ
     ys = ys.at[-1, 3:].set(0.0)     # velocities
+    if is_four_state:
+        ys = jax.vmap(five_to_four)(ys)
+
     from dataclasses import replace
     return replace(sol, ys=ys)
 
@@ -105,7 +128,7 @@ def simulate_batch(
 ):
     """
     Simulate multiple cart-pole trajectories in parallel.
-    
+
     Args:
         controller: Control function (state, time) -> force
         params: Physical parameters (shared across all trajectories)
@@ -113,16 +136,20 @@ def simulate_batch(
         ts: Time points where solution is saved
         y0s: Batch of initial states, shape (batch_size, 5)
         **kwargs: Additional arguments passed to simulate()
-        
+
     Returns:
         Batched diffrax solution with shape (batch_size, ...)
     """
-    # Validate batch initial states format
-    if y0s.shape[-1] != 5:
-        raise ValueError(f"Expected batch initial states format (batch, 5), got shape {y0s.shape}")
-    
+    # Accept either (batch, 5) or (batch, 4)
+    if y0s.shape[-1] == 4:
+        y0s_5 = jax.vmap(four_to_five)(y0s)
+    elif y0s.shape[-1] == 5:
+        y0s_5 = y0s
+    else:
+        raise ValueError(f"Expected batch initial states format (batch, 4|5), got shape {y0s.shape}")
+
     sim_fn = partial(simulate, controller, params, t_span, ts, **kwargs)
-    return jax.vmap(sim_fn)(y0s)
+    return jax.vmap(sim_fn)(y0s_5)
 
 
 # --------------------------------------------------------------------------- #
@@ -137,7 +164,7 @@ def create_time_grid(t_span: tuple[float, float], dt: float) -> jnp.ndarray:
 def extract_trajectory(solution, component: str = "all") -> jnp.ndarray:
     """
     Extract specific components from simulation trajectory.
-    
+
     Args:
         solution: Diffrax solution object
         component: Which component to extract:
@@ -146,12 +173,16 @@ def extract_trajectory(solution, component: str = "all") -> jnp.ndarray:
             - "angle": Reconstructed angle θ = atan2(sin(θ), cos(θ))
             - "velocity": Cart velocity (ẋ)
             - "angular_velocity": Pole angular velocity (θ̇)
-            
+
     Returns:
         Extracted trajectory component(s)
     """
-    states = solution.ys  # Shape: (time_steps, 5)
-    
+    states = solution.ys
+
+    # If states are in 4D, convert to 5D for extraction
+    if states.ndim == 2 and states.shape[-1] == 4:
+        states = jax.vmap(four_to_five)(states)
+
     if component == "all":
         return states
     elif component == "position":
