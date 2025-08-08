@@ -27,54 +27,71 @@ def plot_trajectory(
     Plot cart-pole trajectory with all state variables.
     
     Args:
-        trajectory: State trajectory (N, 5) format [x, cos(θ), sin(θ), ẋ, θ̇]
+        trajectory: Either state trajectory (N, 5) [x, cos(θ), sin(θ), ẋ, θ̇]
+                    or generic y-series (N,) to plot vs given time_points.
         time_points: Time array, created automatically if None
         title: Plot title
         save_path: Path to save figure, displays if None
     """
-    if time_points is None:
-        time_points = jnp.arange(len(trajectory)) * 0.01
-    
-    # Reconstruct angle from cos/sin representation
-    angles = jnp.arctan2(trajectory[:, 2], trajectory[:, 1])
-    
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle(title, fontsize=16)
-    
-    # Position plot
-    axes[0, 0].plot(time_points, trajectory[:, 0])
-    axes[0, 0].set_title('Cart Position')
-    axes[0, 0].set_xlabel('Time (s)')
-    axes[0, 0].set_ylabel('Position (m)')
-    axes[0, 0].grid(True)
-    
-    # Angle plot
-    axes[0, 1].plot(time_points, jnp.degrees(angles))
-    axes[0, 1].set_title('Pendulum Angle')
-    axes[0, 1].set_xlabel('Time (s)')
-    axes[0, 1].set_ylabel('Angle (degrees)')
-    axes[0, 1].grid(True)
-    
-    # Cart velocity plot
-    axes[1, 0].plot(time_points, trajectory[:, 3])
-    axes[1, 0].set_title('Cart Velocity')
-    axes[1, 0].set_xlabel('Time (s)')
-    axes[1, 0].set_ylabel('Velocity (m/s)')
-    axes[1, 0].grid(True)
-    
-    # Angular velocity plot
-    axes[1, 1].plot(time_points, trajectory[:, 4])
-    axes[1, 1].set_title('Angular Velocity')
-    axes[1, 1].set_xlabel('Time (s)')
-    axes[1, 1].set_ylabel('Angular Velocity (rad/s)')
-    axes[1, 1].grid(True)
-    
-    plt.tight_layout()
+    # If 1D series provided, do a simple line plot
+    if trajectory.ndim == 1:
+        if time_points is None:
+            time_points = jnp.arange(len(trajectory))
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(time_points, trajectory)
+        ax.set_title(title)
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Value')
+        ax.grid(True)
+    else:
+        if time_points is None:
+            time_points = jnp.arange(len(trajectory)) * 0.01
+        
+        # Reconstruct angle from cos/sin representation
+        angles = jnp.arctan2(trajectory[:, 2], trajectory[:, 1])
+        
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig.suptitle(title, fontsize=16)
+        
+        # Position plot
+        axes[0, 0].plot(time_points, trajectory[:, 0])
+        axes[0, 0].set_title('Cart Position')
+        axes[0, 0].set_xlabel('Time (s)')
+        axes[0, 0].set_ylabel('Position (m)')
+        axes[0, 0].grid(True)
+        
+        # Angle plot
+        axes[0, 1].plot(time_points, jnp.degrees(angles))
+        axes[0, 1].set_title('Pendulum Angle')
+        axes[0, 1].set_xlabel('Time (s)')
+        axes[0, 1].set_ylabel('Angle (degrees)')
+        axes[0, 1].grid(True)
+        
+        # Cart velocity plot
+        axes[1, 0].plot(time_points, trajectory[:, 3])
+        axes[1, 0].set_title('Cart Velocity')
+        axes[1, 0].set_xlabel('Time (s)')
+        axes[1, 0].set_ylabel('Velocity (m/s)')
+        axes[1, 0].grid(True)
+        
+        # Angular velocity plot
+        axes[1, 1].plot(time_points, trajectory[:, 4])
+        axes[1, 1].set_title('Angular Velocity')
+        axes[1, 1].set_xlabel('Time (s)')
+        axes[1, 1].set_ylabel('Angular Velocity (rad/s)')
+        axes[1, 1].grid(True)
+        
+        plt.tight_layout()
     
     if save_path:
         plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
+        return fig
     else:
-        plt.show()
+        # For tests, still return the figure even if showing
+        try:
+            plt.show()
+        finally:
+            return fig
 
 
 def plot_training_history(

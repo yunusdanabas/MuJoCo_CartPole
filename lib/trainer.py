@@ -78,7 +78,8 @@ def combined_loss(ys, params: CartPoleParams):
 # --------------------------------------------------------------------------- #
 
 class TrainState(NamedTuple):
-    controller: Any                # may be immutable tree (equinox)
+    controller: Any                # full controller object (not JIT-able)
+    ctrl_fn: Any                   # jit-compiled callable for batching
     opt_state: optax.OptState | None
     key: jax.random.KeyArray
 
@@ -157,7 +158,7 @@ def train(controller,
     
     # ---------- JIT-compiled training step -------------------------------- #
     def _train_step(state: TrainState):
-        ctrl, opt_state, key = state
+        ctrl, ctrl_fn, opt_state, key = state
         key, sub = jax.random.split(key)
         
         # Sample initial conditions
@@ -176,17 +177,21 @@ def train(controller,
             updates, opt_state = optimiser.update(trainable_grads, opt_state, 
                                                  eqx.filter(ctrl, eqx.is_array_like))
             ctrl = eqx.apply_updates(ctrl, updates)
+            ctrl_fn = ctrl.batched()
         else:
             # Evaluation only
-            sol = simulate_batch(ctrl.batched(), params, cfg.t_span, ts, init_states)
+            sol = simulate_batch(ctrl_fn, params, cfg.t_span, ts, init_states)
             loss = loss_fn(sol.ys, params)
         
-        return TrainState(ctrl, opt_state, key), loss
+        return TrainState(ctrl, ctrl_fn, opt_state, key), loss
     
-    _train_step = jax.jit(_train_step)
+    # Avoid JIT issues with non-array controller objects
+    # Using eager Python for this small training loop is acceptable in tests
+    # _train_step = jax.jit(_train_step)
     
     # ---------- Main training loop ---------------------------------------- #
-    state = TrainState(controller.jit(), opt_state, key)
+    ctrl_fn = controller.jit().batched()
+    state = TrainState(controller, ctrl_fn, opt_state, key)
     loss_history = []
     
     print(f"Training {'trainable' if is_trainable else 'fixed'} controller for {cfg.num_epochs} epochs")
@@ -196,7 +201,8 @@ def train(controller,
         loss_val = float(loss)
         loss_history.append(loss_val)
         
-        if epoch % (cfg.num_epochs // 10) == 0 or epoch < 10:
+        step = max(1, cfg.num_epochs // 10)
+        if epoch % step == 0 or epoch < 10:
             print(f"Epoch {epoch:4d} | Loss: {loss_val:.6f}")
     
     return state.controller, jnp.array(loss_history)
@@ -217,7 +223,7 @@ def evaluate(controller,
         initial_states = random_initial_conditions(key, 32)
     
     ts = jnp.linspace(t_span[0], t_span[1], 301)
-    sol = simulate_batch(controller.batched(), params, t_span, ts, initial_states)
+    sol = simulate_batch(controller.jit().batched(), params, t_span, ts, initial_states)
     
     loss = loss_fn(sol.ys, params)
     
