@@ -46,7 +46,7 @@ __all__ = [
 def _linearise(params: CartPoleParams) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return continuous-time linearisation (A, B) about upright equilibrium.
 
-    State order for linearisation is 4-state [x, theta, xdot, thdot].
+    Linearisation uses the small-angle 4-state order [x, θ, ẋ, θ̇].
 
     Args:
         params: Physical parameters of the cart-pole.

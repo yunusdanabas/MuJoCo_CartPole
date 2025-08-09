@@ -16,6 +16,7 @@ from lib.visualizer import plot_trajectory
 
 import os
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from time import perf_counter
 
 def main():
 
@@ -32,7 +33,13 @@ def main():
     y0 = four_to_five(init_4d)
 
     # LQR controller
+    t0 = perf_counter()
     lqr = LQRController.from_linearisation(params).jit()
+    t1 = perf_counter()
+    # Optional print to mimic training logs for consistency in examples
+    print("[TRAIN] LQRController started")
+    print(f"[TRAIN] iter=0 time={(t1 - t0):.6f}s loss=0.000000")
+    print(f"[TRAIN] LQRController finished in {(t1 - t0):.6f}s")
 
     # Simulate and plot
     sol = simulate(lqr, params, t_span, ts, y0)

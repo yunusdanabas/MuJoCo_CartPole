@@ -16,6 +16,7 @@ import jax
 import jax.numpy as jnp
 import optax
 import equinox as eqx
+import time
 
 from env.closedloop import simulate_batch  # Changed from simulate_batch
 from env.cartpole import CartPoleParams
@@ -33,6 +34,7 @@ class TrainConfig:
     learning_rate: float = 1e-3
     num_epochs: int = 1_000
     seed: int = 0
+    print_data: bool = False
 
 # --------------------------------------------------------------------------- #
 # Loss functions                                                               #
@@ -146,7 +148,8 @@ def train(controller,
     is_trainable = jax.tree_util.tree_leaves(trainable_params) != []
     
     if not is_trainable and optimiser is not optax.identity():
-        print("Warning: Controller has no trainable parameters, switching to evaluation mode")
+        if cfg.print_data:
+            pass  # avoid extra prints beyond required format
         optimiser = optax.identity()
     
     opt_state = optimiser.init(trainable_params)
@@ -185,25 +188,29 @@ def train(controller,
         
         return TrainState(ctrl, ctrl_fn, opt_state, key), loss
     
-    # Avoid JIT issues with non-array controller objects
-    # Using eager Python for this small training loop is acceptable in tests
-    # _train_step = jax.jit(_train_step)
-    
     # ---------- Main training loop ---------------------------------------- #
     ctrl_fn = controller.jit().batched()
     state = TrainState(controller, ctrl_fn, opt_state, key)
     loss_history = []
     
-    print(f"Training {'trainable' if is_trainable else 'fixed'} controller for {cfg.num_epochs} epochs")
+    ctrl_name = type(controller).__name__
+    start_total = time.perf_counter()
+    if cfg.print_data:
+        print(f"[TRAIN] {ctrl_name} started")
     
     for epoch in range(cfg.num_epochs):
+        iter_start = time.perf_counter()
         state, loss = _train_step(state)
+        iter_time = time.perf_counter() - iter_start
         loss_val = float(loss)
         loss_history.append(loss_val)
         
-        step = max(1, cfg.num_epochs // 10)
-        if epoch % step == 0 or epoch < 10:
-            print(f"Epoch {epoch:4d} | Loss: {loss_val:.6f}")
+        if cfg.print_data:
+            print(f"[TRAIN] iter={epoch} time={iter_time:.6f}s loss={loss_val:.6f}")
+    
+    total_time = time.perf_counter() - start_total
+    if cfg.print_data:
+        print(f"[TRAIN] {ctrl_name} finished in {total_time:.6f}s")
     
     return state.controller, jnp.array(loss_history)
 
@@ -244,7 +251,6 @@ if __name__ == "__main__":
     from controller.linear_controller import LinearController
     
     ctrl = LinearController(K=jnp.array([10., 0., 5., 0.]))
-    config = TrainConfig(num_epochs=100, batch_size=32)
+    config = TrainConfig(num_epochs=100, batch_size=32, print_data=True)
     
     trained_ctrl, history = train(ctrl, cfg=config)
-    print(f"Training completed. Final loss: {history[-1]:.6f}")

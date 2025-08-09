@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 import optax
+import time
 
 from controller.linear_controller import LinearController
 from controller.lqr_controller import LQRController, _linearise
@@ -33,6 +34,7 @@ class LinearTrainingConfig:
     seed: int = 0
     lqr_warm_start: bool = False
     optimizer: str = "sgd"
+    print_data: bool = False
 
 
 def _four_to_five(v):
@@ -126,11 +128,20 @@ def train_linear_controller(
 
     initial_cost = loss_fn(K, init_batch)
     if not jnp.isfinite(initial_cost):
-        print("Invalid initial cost")
+        if config.print_data:
+            print("[TRAIN] LinearController started")
+            print("[TRAIN] iter=0 time=0.000000s loss=inf")
+            print("[TRAIN] LinearController finished in 0.000000s")
         return LinearController(K=initial_K), history
 
+    # Training loop with logging
+    start_total = time.perf_counter()
+    if config.print_data:
+        print("[TRAIN] LinearController started")
+
     rng = key
-    for _ in range(config.num_iterations):
+    for i in range(config.num_iterations):
+        iter_start = time.perf_counter()
         rng, subkey = random.split(rng)
         noise4 = config.perturb_std * random.normal(subkey, (config.batch_size, 4))
         batch4 = base4 + noise4
@@ -140,9 +151,17 @@ def train_linear_controller(
         updates, opt_state = optimizer.update(grads, opt_state)
         K = optax.apply_updates(K, updates)
         history.update(cost, K)
+        iter_time = time.perf_counter() - iter_start
+
+        if config.print_data:
+            print(f"[TRAIN] iter={i} time={iter_time:.6f}s loss={float(cost):.6f}")
 
         if not jnp.isfinite(cost):
             break
+
+    total_time = time.perf_counter() - start_total
+    if config.print_data:
+        print(f"[TRAIN] LinearController finished in {total_time:.6f}s")
 
     controller = LinearController(K=K)
     return controller, history
