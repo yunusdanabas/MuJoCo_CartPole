@@ -14,7 +14,8 @@ from env.helpers import four_to_five
 from controller.linear_controller import create_pd_controller
 from controller.lqr_controller import LQRController
 from controller.nn_controller import NNController
-from lib.visualizer import plot_trajectory
+from lib.trainer import train, TrainConfig
+from lib.visualizer import compare_trajectories
 
 
 def run_and_plot(ctrl, params, t_span, ts, y0, title, outfile):
@@ -33,15 +34,25 @@ def main():
 
     # 1) Linear PD
     linear = create_pd_controller(kp_pos=2.0, kd_pos=1.0, kp_angle=20.0, kd_angle=2.0).jit()
-    run_and_plot(linear, params, t_span, ts, y0_5, "Linear PD Trajectory", "trajectory_linear.png")
+    sol_linear = simulate(linear, params, t_span, ts, y0_5)
 
     # 2) LQR
     lqr = LQRController.from_linearisation(params).jit()
-    run_and_plot(lqr, params, t_span, ts, y0_5, "LQR Trajectory", "trajectory_lqr.png")
+    sol_lqr = simulate(lqr, params, t_span, ts, y0_5)
 
-    # 3) NN
-    nn = NNController.init(seed=0).jit()
-    run_and_plot(nn, params, t_span, ts, y0_5, "NN Trajectory", "trajectory_nn.png")
+    # 3) NN (brief training)
+    nn = NNController.init(seed=0)
+    cfg = TrainConfig(batch_size=32, num_epochs=10, print_data=True, t_span=t_span, ts=ts)
+    nn_trained, _ = train(nn, params, cfg)
+    sol_nn = simulate(nn_trained.jit(), params, t_span, ts, y0_5)
+
+    # Overlay plot
+    compare_trajectories(
+        [sol_linear.ys, sol_lqr.ys, sol_nn.ys],
+        ["Linear", "LQR", "NN"],
+        title="Linear vs LQR vs NN",
+        save_path="trajectory_combo.png",
+    )
 
 
 if __name__ == "__main__":
