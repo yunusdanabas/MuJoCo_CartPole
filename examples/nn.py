@@ -12,7 +12,7 @@ from env.cartpole import CartPoleParams
 from env.closedloop import simulate, create_time_grid
 from controller.nn_controller import NNController
 from lib.visualizer import plot_trajectory
-from lib.trainer import train, TrainConfig
+from lib.training.nn_training import train, TrainConfig
 
 
 def main():

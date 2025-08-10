@@ -14,7 +14,7 @@ from env.helpers import four_to_five
 from controller.linear_controller import create_pd_controller
 from controller.lqr_controller import LQRController
 from controller.nn_controller import NNController
-from lib.trainer import train, TrainConfig
+from lib.training.nn_training import train, TrainConfig
 from lib.visualizer import compare_trajectories
 
 

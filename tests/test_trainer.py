@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 import pytest
-from lib.trainer import train, TrainConfig
+from lib.training.nn_training import train, TrainConfig
 from controller.nn_controller import NNController
 from env.cartpole import CartPoleParams
 
