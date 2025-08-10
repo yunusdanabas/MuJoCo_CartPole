@@ -21,7 +21,7 @@ import time
 
 from env.closedloop import simulate_batch  # Changed from simulate_batch
 from env.cartpole import CartPoleParams
-from env.helpers import total_energy
+from env.helpers import total_energy, four_to_five
 
 # --------------------------------------------------------------------------- #
 # Config dataclass                                                             #
@@ -41,6 +41,7 @@ class TrainConfig:
 # Loss functions                                                               #
 # --------------------------------------------------------------------------- #
 
+@jax.jit
 def default_loss(ys, params: CartPoleParams):
     """Quadratic cost to keep cart near 0 and pole near upright."""
     x = ys[..., 0]
@@ -48,6 +49,7 @@ def default_loss(ys, params: CartPoleParams):
     th = jnp.arctan2(sin_th, cos_th)
     return jnp.mean(x**2 + 10.0 * th**2)
 
+@jax.jit
 def energy_loss(ys, params: CartPoleParams):
     """Energy-based loss for swing-up tasks."""
     mc, mp, l, g = params.mc, params.mp, params.l, params.g
@@ -65,6 +67,7 @@ def energy_loss(ys, params: CartPoleParams):
     
     return energy_error + 0.1 * position_error
 
+@jax.jit
 def combined_loss(ys, params: CartPoleParams):
     """Combined stabilization and energy loss (works with 5-state)."""
     x = ys[..., 0]
@@ -94,6 +97,7 @@ class TrainState(NamedTuple):
 # Initial condition samplers                                                   #
 # --------------------------------------------------------------------------- #
 
+@jax.jit
 def random_initial_conditions(key, batch_size):
     """Sample random initial conditions."""
     return jax.random.uniform(
@@ -102,12 +106,14 @@ def random_initial_conditions(key, batch_size):
         maxval=jnp.array([2.0, jnp.pi, 1.0, 1.0])
     )
 
+@jax.jit
 def downward_initial_conditions(key, batch_size):
     """Sample initial conditions near downward position."""
     base = jnp.array([0., jnp.pi, 0., 0.])
     noise = 0.1 * jax.random.normal(key, (batch_size, 4))
     return base + noise
 
+@jax.jit
 def upright_initial_conditions(key, batch_size):
     """Sample initial conditions near upright position."""
     base = jnp.array([0., 0., 0., 0.])
@@ -175,7 +181,8 @@ def train(controller,
         key, sub = jax.random.split(key)
         
         # Sample initial conditions
-        init_states = init_state_fn(sub, cfg.batch_size)
+        init_states4 = init_state_fn(sub, cfg.batch_size)
+        init_states = jax.vmap(four_to_five)(init_states4)
         
         if is_trainable:
             # Gradient-based update
@@ -197,6 +204,7 @@ def train(controller,
             loss = loss_fn(sol.ys, params)
         
         return TrainState(ctrl, ctrl_fn, opt_state, key), loss
+    _train_step = eqx.filter_jit(_train_step)
     
     # ---------- Main training loop ---------------------------------------- #
     ctrl_fn = controller.jit().batched()
@@ -229,6 +237,7 @@ def train(controller,
 # Evaluation utilities                                                         #
 # --------------------------------------------------------------------------- #
 
+@jax.jit
 def evaluate(controller, 
              params: CartPoleParams = CartPoleParams(),
              initial_states: jnp.ndarray | None = None,
@@ -237,7 +246,7 @@ def evaluate(controller,
     """Evaluate controller performance on given initial conditions."""
     if initial_states is None:
         key = jax.random.PRNGKey(0)
-        initial_states = random_initial_conditions(key, 32)
+        initial_states = jax.vmap(four_to_five)(random_initial_conditions(key, 32))
     
     ts = jnp.linspace(t_span[0], t_span[1], 301)
     sol = simulate_batch(controller.jit().batched(), params, t_span, ts, initial_states)

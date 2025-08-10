@@ -11,18 +11,17 @@ import jax
 import jax.numpy as jnp
 import time
 from controller.base import Controller
-from env.helpers import four_to_five
 
 
 @dataclass(frozen=True)
 class LinearController(Controller):
     """Linear feedback controller: u = -K · state (clipped)."""
-    K: jnp.ndarray          # shape (5,) preferred; (4,) supported for 4D
+    K: jnp.ndarray          # shape (5,)
 
     def __post_init__(self):
         """Initialize JIT functions and validate dimensions."""
-        if self.K.shape not in ((5,), (4,)):
-            raise ValueError(f"K must have shape (5,) or (4,), got {self.K.shape}")
+        if self.K.shape != (5,):
+            raise ValueError(f"K must have shape (5,), got {self.K.shape}")
         
         # JIT compile force functions
         object.__setattr__(self, '_jit_single', jax.jit(self._force_impl))
@@ -31,20 +30,9 @@ class LinearController(Controller):
         super().__post_init__()
     
     def _force_impl(self, state: jnp.ndarray, t: float) -> jnp.ndarray:
-        if state.shape[-1] == 4:
-            if self.K.shape == (4,):
-                raw = -jnp.dot(self.K, state)
-            else:
-                # Up-cast state to 5D for 5D gains
-                s5 = four_to_five(state)
-                raw = -jnp.dot(self.K, s5)
-        else:
-            if self.K.shape == (5,):
-                raw = -jnp.dot(self.K, state)
-            else:
-                # Promote 4D gains to 5D by inserting zero angle terms
-                K5 = jnp.array([self.K[0], 0.0, 0.0, self.K[1], self.K[2]]) if self.K.shape == (3,) else jnp.array([self.K[0], 0.0, 0.0, self.K[2], self.K[3]])
-                raw = -jnp.dot(K5, state)
+        if state.shape[-1] != 5:
+            raise ValueError(f"Expected 5-state [x, cosθ, sinθ, ẋ, θ̇], got shape {state.shape}")
+        raw = -jnp.dot(self.K, state)
         return jnp.clip(raw, -100.0, 100.0)
     
     def _force(self, state: jnp.ndarray, t: float) -> jnp.ndarray:

@@ -40,6 +40,8 @@ class SimConfig:
     paused: bool = False
     should_quit: bool = False
     should_reset: bool = False
+    disturbance: float = 0.0
+    last_control: float = 0.0
 
 
 def load_model(model_path: str):
@@ -60,6 +62,20 @@ def default_key_callback(window, key, scancode, action, mods):  # pragma: no cov
         state.should_reset = True
     elif key in (glfw.KEY_Q, glfw.KEY_ESCAPE):
         state.should_quit = True
+    elif key == glfw.KEY_LEFT:
+        state.disturbance -= 15.0
+    elif key == glfw.KEY_RIGHT:
+        state.disturbance += 15.0
+    elif key == glfw.KEY_UP:
+        # Nudge pole angle +15 deg
+        # We do not have access to model/data here; set a flag and handle next frame
+        state._nudge_up = True
+    elif key == glfw.KEY_DOWN:
+        state._nudge_down = True
+    elif key == glfw.KEY_C:
+        state.disturbance = 0.0
+    elif key == glfw.KEY_P:
+        state.paused = not state.paused
 
 
 def _make_scene_objects(model):  # pragma: no cover - interactive only
@@ -73,12 +89,24 @@ def _make_scene_objects(model):  # pragma: no cover - interactive only
     return cam, opt, scene, context
 
 
+def _render_overlay(context, viewport, gridpos, left: str, right: str):
+    mujoco.mjr_overlay(
+        mujoco.mjtFontScale.mjFONTSCALE_150,
+        gridpos,
+        viewport,
+        left,
+        right,
+        context,
+    )
+
+
 def run_interactive(model_path: str,
                     controller_fn: Callable[[np.ndarray, float], float],
                     out_plot: str,
                     setup_callback: Optional[Callable[[object, object], None]] = None,
                     *,
-                    disturbance_fn: Optional[Callable[[float], float]] = None):  # pragma: no cover
+                    disturbance_fn: Optional[Callable[[float], float]] = None,
+                    prefer_glfw: bool = True):  # pragma: no cover
     """
     Interactive sim with logging and a saved plot.
     Prefers mujoco.viewer (no GLFW req). Falls back to raw GLFW renderer.
@@ -93,11 +121,12 @@ def run_interactive(model_path: str,
     model, data = load_model(model_path)
 
     # ------------------------ Fast path: built-in viewer --------------------- #
-    if mjviewer is not None:
+    if mjviewer is not None and not prefer_glfw:
         # Logs
         ts, xs, thetas, xdots, thdots, us, ds = [], [], [], [], [], [], []
         dt = float(model.opt.timestep)
         t = 0.0
+        user_disturbance = 0.0
 
         # Initial conditions
         if setup_callback is not None:
@@ -117,15 +146,12 @@ def run_interactive(model_path: str,
             while viewer.is_running():
                 step_start = time.time()
 
-                # Reset via 'R' key in built-in viewer? It doesn't have custom keys,
-                # so we emulate periodic reset via horizon in this mode.
                 if t >= SimConfig(model_path).horizon:
                     mujoco.mj_resetData(model, data)
                     if setup_callback is not None:
                         setup_callback(model, data)
                         mujoco.mj_forward(model, data)
                     t = 0.0
-                    # continue loop after reset without logging this step
                     viewer.sync()
                     continue
 
@@ -137,11 +163,15 @@ def run_interactive(model_path: str,
                 state5 = np.array([x, np.cos(th), np.sin(th), xdot, thdot], dtype=np.float32)
 
                 u = float(controller_fn(state5, t))
-                d = float(disturbance_fn(t)) if disturbance_fn is not None else 0.0
+                sched_d = float(disturbance_fn(t)) if disturbance_fn is not None else 0.0
+                d = sched_d + user_disturbance
                 data.ctrl[0] = u + d
 
                 mujoco.mj_step(model, data)
                 t += dt
+
+                # Overlay text (limited in passive viewer; we can only print via console or ignore)
+                # We keep internal tracking only; overlays are fully implemented in GLFW branch.
 
                 # Log
                 ts.append(t); xs.append(x); thetas.append(th)
@@ -173,6 +203,9 @@ def run_interactive(model_path: str,
 
     cfg = SimConfig(model_path=model_path)
     glfw.set_window_user_pointer(window, cfg)
+    # Initialize nudge flags
+    setattr(cfg, "_nudge_up", False)
+    setattr(cfg, "_nudge_down", False)
     glfw.set_key_callback(window, default_key_callback)
 
     cam, opt, scene, context = _make_scene_objects(model)
@@ -211,6 +244,16 @@ def run_interactive(model_path: str,
             cfg.should_reset = False
 
         if not cfg.paused:
+            # Optional angle nudge
+            if getattr(cfg, "_nudge_up", False) and model.nq >= 2:
+                data.qpos[1] += np.deg2rad(15.0)
+                cfg._nudge_up = False
+                mujoco.mj_forward(model, data)
+            if getattr(cfg, "_nudge_down", False) and model.nq >= 2:
+                data.qpos[1] -= np.deg2rad(15.0)
+                cfg._nudge_down = False
+                mujoco.mj_forward(model, data)
+
             # Build 5-state from MuJoCo data
             x = float(data.qpos[0])
             th = float(data.qpos[1])
@@ -219,8 +262,10 @@ def run_interactive(model_path: str,
             state5 = np.array([x, np.cos(th), np.sin(th), xdot, thdot], dtype=np.float32)
 
             u = float(controller_fn(state5, t))
-            d = float(disturbance_fn(t)) if disturbance_fn is not None else 0.0
+            sched_d = float(disturbance_fn(t)) if disturbance_fn is not None else 0.0
+            d = sched_d + cfg.disturbance
 
+            cfg.last_control = u
             data.ctrl[0] = u + d
             mujoco.mj_step(model, data)
             t += dt
@@ -238,6 +283,26 @@ def run_interactive(model_path: str,
         viewport = mujoco.MjrRect(0, 0, width, height)
         mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL.value, scene)
         mujoco.mjr_render(viewport, scene, context)
+
+        # Overlays: hints + status
+        left_text = (
+            "Controls:\n"
+            "SPACE: pause/resume\n"
+            "R: reset\n"
+            "Q/ESC: quit\n"
+            "LEFT/RIGHT: disturbance -15/+15 N\n"
+            "UP/DOWN: nudge pole angle ±15°\n"
+            "C: clear disturbance\n"
+        )
+        right_text = (
+            f"t = {t:6.2f} s\n"
+            f"u = {cfg.last_control:7.2f} N\n"
+            f"d = {cfg.disturbance:7.2f} N\n"
+            f"θ = {np.degrees(float(data.qpos[1])):6.2f} deg\n"
+            f"x = {float(data.qpos[0]):6.2f} m\n"
+        )
+        _render_overlay(context, viewport, mujoco.mjtGridPos.mjGRID_BOTTOMLEFT, left_text, " ")
+        _render_overlay(context, viewport, mujoco.mjtGridPos.mjGRID_TOPRIGHT, "Status", right_text)
 
         glfw.swap_buffers(window)
 

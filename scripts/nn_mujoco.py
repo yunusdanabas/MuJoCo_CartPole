@@ -24,7 +24,7 @@ def _disturbance(t: float) -> float:
 def main():  # pragma: no cover - interactive
     ctrl = NNController.init(seed=0).jit()
     controller_fn = lambda s, t: float(ctrl(np.array(s, dtype=np.float32), float(t)))
-    run_interactive("cart_pole.xml", controller_fn, out_plot="nn_mujoco.png", disturbance_fn=_disturbance)
+    run_interactive("cart_pole.xml", controller_fn, out_plot="nn_mujoco.png", disturbance_fn=_disturbance, prefer_glfw=True)
 
 
 if __name__ == "__main__":
