@@ -52,6 +52,7 @@ def main():  # pragma: no cover - interactive
         out_plot="linear_mujoco.png",
         disturbance_fn=_disturbance,
         setup_callback=_init_state,
+        prefer_glfw=True,
     )
 
 

@@ -136,6 +136,22 @@ def test_controller_consistency():
     assert jnp.isclose(force_jit, expected_force, atol=1e-6)
 
 
+def test_linear_zero_K_scalar_output_and_closedloop():
+    """Smoke: zero gain must return scalar and integrate via closedloop without shape errors."""
+    from env.closedloop import simulate, create_time_grid
+    from env.cartpole import CartPoleParams
+
+    ctrl = LinearController(K=jnp.zeros(5)).jit()
+    out = ctrl(jnp.zeros(5), 0.0)
+    assert out.shape == ()
+
+    params = CartPoleParams()
+    tgrid = create_time_grid((0.0, 0.1), 0.01)
+    y0 = jnp.array([0.0, 1.0, 0.0, 0.0, 0.0])
+    sol = simulate(ctrl, params, (0.0, 0.1), tgrid, y0)
+    assert jnp.isfinite(sol.ys).all()
+
+
 def test_controller_profiling():
     """Test controller profiling functionality"""
     K = jnp.array([1., 2., 3., 4., 5.])

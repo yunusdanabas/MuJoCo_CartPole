@@ -33,6 +33,12 @@ def five_to_four(state5: Float[Array, "...5"]) -> Float[Array, "...4"]:
     return jnp.concatenate([x, th, x_dot, th_dot], axis=-1)
 
 
+@jax.jit
+def to_5state(x: Float[Array, ""], theta: Float[Array, ""], xdot: Float[Array, ""], thetadot: Float[Array, ""]) -> Float[Array, "5"]:
+    """Map raw (x, θ, ẋ, θ̇) values to [x, cosθ, sinθ, ẋ, θ̇]."""
+    return jnp.array([x, jnp.cos(theta), jnp.sin(theta), xdot, thetadot])
+
+
 # --------------------------------------------------------------------------- #
 # Mass Matrix Operations
 # --------------------------------------------------------------------------- #
