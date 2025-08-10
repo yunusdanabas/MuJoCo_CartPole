@@ -1,4 +1,5 @@
 """
+lib/trainer.py
 Generic batched trainer for cart-pole controllers.
 
 Uses Diffrax roll-outs with our fast env.dynamics.
@@ -41,8 +42,10 @@ class TrainConfig:
 # --------------------------------------------------------------------------- #
 
 def default_loss(ys, params: CartPoleParams):
-    """Simple quadratic cost close to upright & centre over trajectory."""
-    x, th = ys[..., 0], ys[..., 1]
+    """Quadratic cost to keep cart near 0 and pole near upright."""
+    x = ys[..., 0]
+    cos_th, sin_th = ys[..., 1], ys[..., 2]
+    th = jnp.arctan2(sin_th, cos_th)
     return jnp.mean(x**2 + 10.0 * th**2)
 
 def energy_loss(ys, params: CartPoleParams):
@@ -63,8 +66,10 @@ def energy_loss(ys, params: CartPoleParams):
     return energy_error + 0.1 * position_error
 
 def combined_loss(ys, params: CartPoleParams):
-    """Combined stabilization and energy loss."""
-    x, th = ys[..., 0], ys[..., 1]
+    """Combined stabilization and energy loss (works with 5-state)."""
+    x = ys[..., 0]
+    cos_th, sin_th = ys[..., 1], ys[..., 2]
+    th = jnp.arctan2(sin_th, cos_th)
     
     # Stabilization loss (stronger near upright)
     upright_weight = jnp.exp(-th**2)  # Higher weight when θ ≈ 0
@@ -118,7 +123,9 @@ def train(controller,
           cfg: TrainConfig = TrainConfig(),
           loss_fn: Callable = default_loss,
           optimiser: optax.GradientTransformation | None = None,
-          init_state_fn: Callable[[jax.random.KeyArray, int], jnp.ndarray] | None = None):
+          init_state_fn: Callable[[jax.random.KeyArray, int], jnp.ndarray] | None = None,
+          *,
+          print_data: bool = True):
     """
     Main training entry point.
 
@@ -136,6 +143,9 @@ def train(controller,
     # Setup configuration
     if not isinstance(cfg, TrainConfig):
         cfg = TrainConfig(**cfg.__dict__)
+
+    # Sync logging flag
+    cfg.print_data = bool(print_data)
     
     ts = cfg.ts if cfg.ts is not None else jnp.linspace(cfg.t_span[0], cfg.t_span[1], 201)
     
@@ -235,7 +245,9 @@ def evaluate(controller,
     loss = loss_fn(sol.ys, params)
     
     # Additional metrics
-    final_angle_error = jnp.mean(jnp.abs(sol.ys[:, -1, 1]))  # Final angle error
+    cos_th_f, sin_th_f = sol.ys[:, -1, 1], sol.ys[:, -1, 2]
+    th_f = jnp.arctan2(sin_th_f, cos_th_f)
+    final_angle_error = jnp.mean(jnp.abs(th_f))     # |θ| at final time
     max_cart_position = jnp.max(jnp.abs(sol.ys[:, :, 0]))    # Max cart displacement
     
     return {

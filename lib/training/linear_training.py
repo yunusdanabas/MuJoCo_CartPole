@@ -1,4 +1,7 @@
-"""Unified training utilities for linear controllers with optional advanced features."""
+"""
+lib/training/linear_training.py
+Unified training utilities for linear controllers with optional advanced features.
+"""
 
 from __future__ import annotations
 
@@ -53,8 +56,8 @@ def _make_loss_fn(
 
     def loss(K, batch_states):
         def ctrl(y, t):
-            err = y - TARGET
-            return jnp.clip(-(err @ K), -100.0, 100.0)
+            # Match deployed controller semantics: u = -K · state
+            return jnp.clip(-(y @ K), -100.0, 100.0)
 
         sol = simulate_batch(ctrl, params, (ts[0], ts[-1]), ts, batch_states)
         bad = ~jnp.all(jnp.isfinite(sol.ys))
@@ -81,8 +84,12 @@ def train_linear_controller(
     *,
     Q: jnp.ndarray | None = None,
     params: CartPoleParams = CartPoleParams(),
+    print_data: bool = True,
 ):
     """Train linear controller with optional advanced features."""
+
+    # Override config flag with explicit print_data parameter
+    config.print_data = bool(print_data)
 
     if Q is None:
         Q = create_cost_matrices()
@@ -138,8 +145,21 @@ def train_linear_controller(
     start_total = time.perf_counter()
     if config.print_data:
         print("[TRAIN] LinearController started")
+        print(f"[TRAIN] total_iters={config.num_iterations}")
+        print("[TRAIN] Learning Parameters:")
+        print(f"  learning_rate: {config.learning_rate}")
+        print(f"  num_iterations: {config.num_iterations}")
+        print(f"  trajectory_length: {config.trajectory_length}")
+        print(f"  batch_size: {config.batch_size}")
+        print(f"  perturb_std: {config.perturb_std}")
+        print(f"  lr_schedule: {config.lr_schedule}")
+        print(f"  stability_weight: {config.stability_weight}")
+        print(f"  seed: {config.seed}")
+        print(f"  lqr_warm_start: {config.lqr_warm_start}")
+        print(f"  optimizer: {config.optimizer}")
 
     rng = key
+    losses = []
     for i in range(config.num_iterations):
         iter_start = time.perf_counter()
         rng, subkey = random.split(rng)
@@ -153,7 +173,9 @@ def train_linear_controller(
         history.update(cost, K)
         iter_time = time.perf_counter() - iter_start
 
-        if config.print_data:
+        losses.append(float(cost))
+        # Print only every 50 iterations, and always print first and last
+        if config.print_data and (i % 50 == 0 or i == config.num_iterations - 1 or i == 0):
             print(f"[TRAIN] iter={i} time={iter_time:.6f}s loss={float(cost):.6f}")
 
         if not jnp.isfinite(cost):
@@ -162,6 +184,11 @@ def train_linear_controller(
     total_time = time.perf_counter() - start_total
     if config.print_data:
         print(f"[TRAIN] LinearController finished in {total_time:.6f}s")
+        print("[TRAIN] Losses (every 50 iters):")
+        for idx in range(0, len(losses), 50):
+            print(f"  iter={idx} loss={losses[idx]:.6f}")
+        if (len(losses) - 1) % 50 != 0:
+            print(f"  iter={len(losses)-1} loss={losses[-1]:.6f}")
 
     controller = LinearController(K=K)
     return controller, history

@@ -1,11 +1,10 @@
 """
-examples/basic_nn.py
-
-Run a basic NN-controlled cart-pole swing-up using the 5-state formulation
+Run a NN-controlled cart-pole swing-up using the 5-state formulation
 [x, cos(theta), sin(theta), xdot, thdot] and save a plot to results/trajectory_nn.png.
 """
 from __future__ import annotations
 
+import time
 import jax
 import jax.numpy as jnp
 
@@ -15,10 +14,10 @@ from controller.nn_controller import NNController
 from lib.visualizer import plot_trajectory
 from lib.trainer import train, TrainConfig
 
-import os
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 def main():
+    print("[INFO] Training Started for NNController")
+
     params = CartPoleParams()
 
     # Time grid
@@ -28,10 +27,14 @@ def main():
     # Initial state: downwards, zero velocities (5D)
     y0 = jnp.array([0.0, -1.0, 0.0, 0.0, 0.0])
 
-    # Deterministic NN controller (train briefly)
+    # Deterministic NN controller (train)
     nn = NNController.init(seed=0)
-    cfg = TrainConfig(batch_size=32, num_epochs=10, print_data=True, t_span=t_span, ts=ts)
-    nn_trained, _ = train(nn, params, cfg)
+    cfg = TrainConfig(batch_size=64, num_epochs=200, print_data=True, t_span=t_span, ts=ts)
+
+    t0 = time.perf_counter()
+    nn_trained, _ = train(nn, params, cfg, print_data=True)
+    t1 = time.perf_counter()
+    print(f"[INFO] Training Finished for NNController in {(t1 - t0):.2f} seconds")
 
     # Simulate and plot
     sol = simulate(nn_trained.jit(), params, t_span, ts, y0)

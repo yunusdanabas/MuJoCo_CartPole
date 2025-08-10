@@ -1,4 +1,7 @@
-"""Shared utilities for linear controller training."""
+"""
+lib/training/_common.py
+Shared utilities for linear controller training.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +16,8 @@ TARGET = jnp.array([0.0, 1.0, 0.0, 0.0, 0.0])
 def _trajectory_cost_impl(traj: jnp.ndarray, K: jnp.ndarray, Q: jnp.ndarray, R: float, dt: float) -> jnp.ndarray:
     """Compute trajectory cost for a single rollout."""
     err = traj - TARGET
-    forces = -(err @ K)
+    # Control is defined as u = -K · state (clipped).
+    forces = jnp.clip(-(traj @ K), -100.0, 100.0)
     state_cost = jnp.einsum("ij,jk,ik->i", err, Q, err)
     ctrl_cost = R * jnp.square(forces)
     return dt * jnp.sum(state_cost + ctrl_cost)

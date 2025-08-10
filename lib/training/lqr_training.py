@@ -1,4 +1,6 @@
-"""LQR 'training' utilities (single-shot Riccati solve) with logging.
+"""
+lib/training/lqr_training.py
+LQR 'training' utilities (single-shot Riccati solve) with logging.
 
 This module matches the logging interface used by other trainers.
 """
@@ -23,11 +25,23 @@ class LQRTrainingConfig:
 def train_lqr_controller(
     params: CartPoleParams = CartPoleParams(),
     cfg: LQRTrainingConfig = LQRTrainingConfig(),
+    *,
+    print_data: bool = True,
 ) -> LQRController:
     """Compute LQR gain once and return controller, with optional logging."""
+    # Sync logging flag
+    cfg.print_data = bool(print_data)
+
     start_total = time.perf_counter()
     if cfg.print_data:
         print("[TRAIN] LQRController started")
+        print("[TRAIN] LQR Parameters:")
+        np_Q = jnp.asarray(cfg.Q)
+        np_R = jnp.asarray(cfg.R)
+        print("  Q:")
+        print(np_Q)
+        print("  R:")
+        print(np_R)
 
     # Linearise and solve for K
     A, B = _linearise(params)
@@ -35,8 +49,6 @@ def train_lqr_controller(
 
     elapsed = time.perf_counter() - start_total
     if cfg.print_data:
-        # Single-shot; emit one iter line
-        print(f"[TRAIN] iter=0 time={elapsed:.6f}s loss=0.000000")
         print(f"[TRAIN] LQRController finished in {elapsed:.6f}s")
 
     return ctrl

@@ -245,7 +245,7 @@ def compare_trajectories(
     
     colors = plt.cm.tab10(np.linspace(0, 1, len(trajectories)))
     
-    for i, (traj, label) in enumerate(trajectories, labels):
+    for i, (traj, label) in enumerate(zip(trajectories, labels)):
         time_points = jnp.arange(len(traj)) * 0.01
         angles = jnp.arctan2(traj[:, 2], traj[:, 1])
         
@@ -351,8 +351,8 @@ def create_animation(
         pendulum_x = x + pendulum_length * sin_theta
         pendulum_y = pendulum_length * cos_theta
         
-        pendulum_line.set_data([x, pendulum_x], [cart_height, pendulum_y])
-        pendulum_mass.set_center((pendulum_x, pendulum_y))
+        pendulum_line.set_data([x, pendulum_x], [cart_height, cart_height + pendulum_y])
+        pendulum_mass.set_center((pendulum_x, cart_height + pendulum_y))
         
         return cart_patch, pendulum_line, pendulum_mass
     
