@@ -36,6 +36,7 @@ class TrainConfig:
     num_epochs: int = 1_000
     seed: int = 0
     print_data: bool = False
+    grad_clip: float = 1.0  # gradient clipping norm
 
 # --------------------------------------------------------------------------- #
 # Loss functions                                                               #
@@ -50,35 +51,106 @@ def default_loss(ys, params: CartPoleParams):
 
 def energy_loss(ys, params: CartPoleParams):
     """Energy-based loss for swing-up tasks."""
-    mc, mp, l, g = params.mc, params.mp, params.l, params.g
-    target_energy = mp * g * l  # Energy at upright position
+    # Compute target energy at upright position using helper function
+    upright_state = jnp.array([0.0, 1.0, 0.0, 0.0, 0.0])  # [x, cos0, sin0, ẋ, θ̇]
+    target_energy = total_energy(upright_state, params)  # Use helper for consistency
     
     # Compute energy for each state
     energies = jax.vmap(lambda state: total_energy(state, params))(ys.reshape(-1, ys.shape[-1]))
     energies = energies.reshape(ys.shape[:-1])
     
-    # Penalize deviation from target energy
+    # Strong energy penalty for swing-up
     energy_error = jnp.mean((energies - target_energy)**2)
     
-    # Also penalize position deviation
-    position_error = jnp.mean(ys[..., 0]**2)
+    # Weaker position penalty - let cart move during swing-up
+    position_error = 0.01 * jnp.mean(ys[..., 0]**2)
     
-    return energy_error + 0.1 * position_error
+    return energy_error + position_error
+
+def swingup_loss(ys, params: CartPoleParams):
+    """Improved swing-up focused loss with better energy and momentum guidance."""
+    # Target energy at upright
+    upright_state = jnp.array([0.0, 1.0, 0.0, 0.0, 0.0])
+    target_energy = total_energy(upright_state, params)
+    
+    # Current energies
+    energies = jax.vmap(lambda state: total_energy(state, params))(ys.reshape(-1, ys.shape[-1]))
+    energies = energies.reshape(ys.shape[:-1])
+    
+    # Energy loss - main objective for swing-up
+    energy_error = jnp.mean((energies - target_energy)**2)
+    
+    # Extract state components
+    cos_th, sin_th = ys[..., 1], ys[..., 2]
+    th = jnp.arctan2(sin_th, cos_th)
+    thdot = ys[..., 4]
+    xdot = ys[..., 3]
+    
+    # Phase-aware momentum guidance:
+    # When pole is in lower half (cos_th < 0), encourage positive angular velocity
+    # When pole is in upper half (cos_th > 0), encourage small angular velocity for stabilization
+    lower_half_mask = cos_th < 0
+    upper_half_mask = cos_th > 0
+    
+    # Momentum guidance: encourage θ̇ > 0 in lower half, small θ̇ in upper half
+    momentum_loss = jnp.mean(
+        jnp.where(lower_half_mask, 
+                  jnp.maximum(0.0, -thdot),  # Penalize negative θ̇ in lower half
+                  jnp.abs(thdot))             # Penalize large θ̇ in upper half
+    )
+    
+    # Cart movement guidance: encourage cart movement during swing-up, minimize during stabilization
+    cart_movement = jnp.mean(
+        jnp.where(lower_half_mask,
+                 0.0,                        # No penalty for cart movement during swing-up
+                 jnp.abs(xdot))              # Penalize cart movement during stabilization
+    )
+    
+    # Angle-based position penalty: stronger penalty when near upright
+    angle_error = jnp.mean(jnp.where(upper_half_mask, th**2, 0.1 * th**2))
+    
+    # Cart position penalty: minimal during swing-up, stronger during stabilization
+    cart_position = jnp.mean(
+        jnp.where(upper_half_mask,
+                 ys[..., 0]**2,              # Strong cart position penalty when stabilizing
+                 0.01 * ys[..., 0]**2)       # Weak penalty during swing-up
+    )
+    
+    # Combine losses with appropriate weights
+    total_loss = (
+        1.0 * energy_error +      # Primary objective
+        0.5 * momentum_loss +     # Momentum guidance
+        0.1 * cart_movement +     # Cart movement guidance
+        0.3 * angle_error +       # Angle stabilization
+        0.2 * cart_position       # Cart position control
+    )
+    
+    return total_loss
 
 def combined_loss(ys, params: CartPoleParams):
-    """Combined stabilization and energy loss (works with 5-state)."""
+    """Improved combined loss with better balance between swing-up and stabilization."""
     x = ys[..., 0]
     cos_th, sin_th = ys[..., 1], ys[..., 2]
     th = jnp.arctan2(sin_th, cos_th)
     
+    # Phase-aware weighting: use angle to determine if we're in swing-up or stabilization phase
+    # When |θ| > π/4, we're in swing-up phase; when |θ| < π/4, we're stabilizing
+    swingup_phase = jnp.abs(th) > jnp.pi/4
+    stab_phase = ~swingup_phase
+    
     # Stabilization loss (stronger near upright)
-    upright_weight = jnp.exp(-th**2)  # Higher weight when θ ≈ 0
-    stab_loss = jnp.mean(upright_weight * (x**2 + 100.0 * th**2))
+    stab_loss = jnp.mean(
+        jnp.where(stab_phase,
+                 x**2 + 50.0 * th**2,        # Strong stabilization when near upright
+                 0.1 * (x**2 + th**2))       # Weak penalty during swing-up
+    )
     
-    # Energy loss (for swing-up)
+    # Energy loss for swing-up (only active during swing-up phase)
     eng_loss = energy_loss(ys, params)
+    eng_loss = jnp.mean(jnp.where(swingup_phase, eng_loss, 0.0))
     
-    return 0.7 * stab_loss + 0.3 * eng_loss
+    # Combine with phase-aware weighting
+    return 0.6 * stab_loss + 0.4 * eng_loss
 
 # --------------------------------------------------------------------------- #
 # Training state                                                               #
@@ -95,24 +167,61 @@ class TrainState(NamedTuple):
 # --------------------------------------------------------------------------- #
 
 def random_initial_conditions(key, batch_size):
-    """Sample random initial conditions."""
-    return jax.random.uniform(
+    """Sample random initial conditions in 5D format."""
+    # Sample 4D [x, θ, ẋ, θ̇] then convert to 5D [x, cosθ, sinθ, ẋ, θ̇]
+    states_4d = jax.random.uniform(
         key, (batch_size, 4),
         minval=jnp.array([-2.0, -jnp.pi, -1.0, -1.0]),
         maxval=jnp.array([2.0, jnp.pi, 1.0, 1.0])
     )
+    # Convert to 5D canonical state and ensure float32
+    x, th, xdot, thdot = jnp.split(states_4d, 4, axis=-1)
+    return jnp.concatenate([x, jnp.cos(th), jnp.sin(th), xdot, thdot], axis=-1).astype(jnp.float32)
 
 def downward_initial_conditions(key, batch_size):
-    """Sample initial conditions near downward position."""
-    base = jnp.array([0., jnp.pi, 0., 0.])
-    noise = 0.1 * jax.random.normal(key, (batch_size, 4))
-    return base + noise
+    """Improved initial conditions for swing-up training with better variety."""
+    # Base: [x, θ, ẋ, θ̇] = [0, π, 0, 0] → [x, cosπ, sinπ, ẋ, θ̇] = [0, -1, 0, 0, 0]
+    base_4d = jnp.array([0., jnp.pi, 0., 0.])
+    
+    # Split key for different noise components
+    key1, key2, key3 = jax.random.split(key, 3)
+    
+    # Position noise: allow some cart position variation
+    x_noise = jax.random.normal(key1, (batch_size,)) * 0.5  # ±0.5 cart position
+    
+    # Angle noise: focus on lower half but allow some variation
+    # Most samples near π (downward), some near π/2 and 3π/2
+    angle_noise = jax.random.normal(key2, (batch_size,)) * 0.3  # ±0.3 radian
+    angles = jnp.pi + angle_noise
+    # Ensure angles stay in lower half [π/2, 3π/2]
+    angles = jnp.clip(angles, jnp.pi/2, 3*jnp.pi/2)
+    
+    # Velocity noise: more aggressive for better swing-up training
+    # Allow both positive and negative initial velocities
+    xdot_noise = jax.random.normal(key3, (batch_size,)) * 1.0  # ±1.0 cart velocity
+    thdot_noise = jax.random.normal(key3, (batch_size,)) * 0.8  # ±0.8 angular velocity
+    
+    # Combine all components
+    states_4d = jnp.stack([
+        x_noise,           # x position
+        angles,            # θ angle
+        xdot_noise,        # ẋ velocity
+        thdot_noise        # θ̇ velocity
+    ], axis=1)
+    
+    # Convert to 5D canonical state and ensure float32
+    x, th, xdot, thdot = jnp.split(states_4d, 4, axis=-1)
+    return jnp.concatenate([x, jnp.cos(th), jnp.sin(th), xdot, thdot], axis=-1).astype(jnp.float32)
 
 def upright_initial_conditions(key, batch_size):
-    """Sample initial conditions near upright position."""
-    base = jnp.array([0., 0., 0., 0.])
-    noise = 0.1 * jax.random.normal(key, (batch_size, 4))
-    return base + noise
+    """Sample initial conditions near upright position in 5D format."""
+    # Base: [x, θ, ẋ, θ̇] = [0, 0, 0, 0] → [x, cos0, sin0, ẋ, θ̇] = [0, 1, 0, 0, 0]
+    base_4d = jnp.array([0., 0., 0., 0.])
+    noise_4d = 0.1 * jax.random.normal(key, (batch_size, 4))
+    states_4d = base_4d + noise_4d
+    # Convert to 5D canonical state and ensure float32
+    x, th, xdot, thdot = jnp.split(states_4d, 4, axis=-1)
+    return jnp.concatenate([x, jnp.cos(th), jnp.sin(th), xdot, thdot], axis=-1).astype(jnp.float32)
 
 # --------------------------------------------------------------------------- #
 # Public API                                                                   #
@@ -121,24 +230,18 @@ def upright_initial_conditions(key, batch_size):
 def train(controller,
           params: CartPoleParams = CartPoleParams(),
           cfg: TrainConfig = TrainConfig(),
-          loss_fn: Callable = default_loss,
+          loss_fn: Callable | str = "default_loss",
           optimiser: optax.GradientTransformation | None = None,
-          init_state_fn: Callable[[jax.random.KeyArray, int], jnp.ndarray] | None = None,
+          init_state_fn: Callable[[jax.random.KeyArray, int], jnp.ndarray] | str | None = None,
           *,
           print_data: bool = True):
     """
     Main training entry point.
-
-    Arguments
-    ---------
-    controller
-        Any object with __call__(state, t) and either:
-        • eqx.is_array_like leaves (for gradient-based), or  
-        • an external optimiser/update_fn handles updates
-    optimiser
-        optax optimiser; if None, runs in evaluation-only mode
-    init_state_fn(key, batch) -> (batch, state_dim)
-        Custom initial-condition sampler
+    
+    JIT optimization:
+    - The per-epoch training step is JIT-compiled for speed.
+    - The loss function for gradients is also JITted.
+    - All controller calls are JITted for fast simulation.
     """
     # Setup configuration
     if not isinstance(cfg, TrainConfig):
@@ -149,9 +252,26 @@ def train(controller,
     
     ts = cfg.ts if cfg.ts is not None else jnp.linspace(cfg.t_span[0], cfg.t_span[1], 201)
     
+    # Handle string-based loss function
+    if isinstance(loss_fn, str):
+        loss_fn_map = {
+            "default_loss": default_loss,
+            "energy_loss": energy_loss,
+            "swingup_loss": swingup_loss,  # Add the improved swing-up loss
+            "combined_loss": combined_loss
+        }
+        if loss_fn not in loss_fn_map:
+            raise ValueError(f"Unknown loss function: {loss_fn}. Available: {list(loss_fn_map.keys())}")
+        loss_fn = loss_fn_map[loss_fn]
+    
     # Setup optimiser
     if optimiser is None:
-        optimiser = optax.identity()  # No-op optimiser for evaluation mode
+        # Default optimizer with better parameters for stability
+        optimiser = optax.chain(
+            optax.clip_by_global_norm(cfg.grad_clip),  # Gradient clipping for stability
+            optax.adam(learning_rate=cfg.learning_rate, b1=0.9, b2=0.999),
+            optax.add_decayed_weights(1e-4)            # Weight decay for regularization
+        )
     
     # Check if controller is trainable
     trainable_params = eqx.filter(controller, eqx.is_array_like)
@@ -165,11 +285,21 @@ def train(controller,
     opt_state = optimiser.init(trainable_params)
     key = jax.random.PRNGKey(cfg.seed)
     
-    # Default initial condition sampler
-    if init_state_fn is None:
+    # Handle string-based initial condition sampler
+    if isinstance(init_state_fn, str):
+        init_state_map = {
+            "random_initial_conditions": random_initial_conditions,
+            "downward_initial_conditions": downward_initial_conditions,
+            "upright_initial_conditions": upright_initial_conditions
+        }
+        if init_state_fn not in init_state_map:
+            raise ValueError(f"Unknown initial condition function: {init_state_fn}. Available: {list(init_state_map.keys())}")
+        init_state_fn = init_state_map[init_state_fn]
+    elif init_state_fn is None:
         init_state_fn = downward_initial_conditions
     
     # ---------- JIT-compiled training step -------------------------------- #
+    # Do NOT JIT _train_step itself, because TrainState contains non-array objects (controller, ctrl_fn)
     def _train_step(state: TrainState):
         ctrl, ctrl_fn, opt_state, key = state
         key, sub = jax.random.split(key)
@@ -179,6 +309,7 @@ def train(controller,
         
         if is_trainable:
             # Gradient-based update
+            @jax.jit
             def loss_for_grad(c):
                 sol = simulate_batch(c.batched(), params, cfg.t_span, ts, init_states)
                 return loss_fn(sol.ys, params)

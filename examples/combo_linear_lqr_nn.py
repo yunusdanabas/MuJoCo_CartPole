@@ -15,7 +15,7 @@ from controller.linear_controller import create_pd_controller
 from controller.lqr_controller import LQRController
 from controller.nn_controller import NNController
 from lib.training.nn_training import train, TrainConfig
-from lib.visualizer import compare_trajectories
+from lib.visualizer import compare_trajectories, plot_trajectory
 
 
 def run_and_plot(ctrl, params, t_span, ts, y0, title, outfile):
@@ -44,7 +44,13 @@ def main():
     nn = NNController.init(seed=0)
     cfg = TrainConfig(batch_size=32, num_epochs=10, print_data=True, t_span=t_span, ts=ts)
     nn_trained, _ = train(nn, params, cfg)
-    sol_nn = simulate(nn_trained.jit(), params, t_span, ts, y0_5)
+    
+    # JIT all controllers for faster simulation
+    linear = linear.jit()
+    lqr = lqr.jit()
+    nn_trained = nn_trained.jit()
+    
+    sol_nn = simulate(nn_trained, params, t_span, ts, y0_5)
 
     # Overlay plot
     compare_trajectories(

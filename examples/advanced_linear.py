@@ -35,6 +35,9 @@ def main():
     initial_state = jnp.array([0.1, 0.95, 0.31, 0.0, 0.0])
     initial_K = jnp.array([1.0, -10.0, 10.0, 1.0, 1.0])
     controller, history = train_linear_controller(initial_K, initial_state, config)
+    
+    # JIT the controller for faster execution
+    controller = controller.jit()
 
     print("Advanced flags enabled:")
     print(f"  batch_size={config.batch_size}")

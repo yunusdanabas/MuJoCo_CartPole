@@ -39,10 +39,6 @@ __all__ = [
 ]
 
 
-# --------------------------------------------------------------------------- #
-# Linearisation                                                               #
-# --------------------------------------------------------------------------- #
-
 def _linearise(params: CartPoleParams) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return continuous-time linearisation (A, B) about upright equilibrium.
 
@@ -55,31 +51,25 @@ def _linearise(params: CartPoleParams) -> Tuple[jnp.ndarray, jnp.ndarray]:
         (A, B): Continuous-time linearised dynamics matrices.
     """
     mc, mp, l, g = params.mc, params.mp, params.l, params.g
-    A = jnp.array(
-        [
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [0.0, mp * g / mc, 0.0, 0.0],
-            [0.0, g * (mc + mp) / (l * mc), 0.0, 0.0],
-        ],
-        dtype=jnp.float32,
-    )
+    
+    # State matrix A (4x4)
+    A = jnp.array([
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, mp * g / mc, 0.0, 0.0],
+        [0.0, g * (mc + mp) / (l * mc), 0.0, 0.0],
+    ], dtype=jnp.float32)
 
-    B = jnp.array(
-        [
-            [0.0],
-            [0.0],
-            [1.0 / mc],
-            [1.0 / (l * mc)],
-        ],
-        dtype=jnp.float32,
-    )
+    # Input matrix B (4x1)
+    B = jnp.array([
+        [0.0],
+        [0.0],
+        [1.0 / mc],
+        [1.0 / (l * mc)],
+    ], dtype=jnp.float32)
+    
     return A, B
 
-
-# --------------------------------------------------------------------------- #
-# Continuous-time ARE via simple projected gradient                            #
-# --------------------------------------------------------------------------- #
 
 def _solve_care_iterative(
     A: jnp.ndarray,
@@ -125,21 +115,19 @@ def _solve_care_iterative(
         K0 = jnp.array(K0_np, dtype=A.dtype)
     else:
         # Heuristic stabilising initial policy: velocity damping
-        k3 = 10.0
-        k4 = 10.0
-        K0 = jnp.array([[0.0, 0.0, k3, k4]], dtype=A.dtype)
-    # Run a simple Python loop for robustness (no JIT constraints)
+        K0 = jnp.array([[0.0, 0.0, 10.0, 10.0]], dtype=A.dtype)
+    
+    # Run policy iteration
     K = K0
     for _ in range(iters):
         Acl = A - B @ K
         Qbar = Q + K.T @ R @ K
         P = solve_lyapunov(Acl, Qbar)
         K = jnp.linalg.solve(R, B.T @ P)
-    K_final = K
-
+    
     # Return P corresponding to final policy
-    Acl = A - B @ K_final
-    Qbar = Q + K_final.T @ R @ K_final
+    Acl = A - B @ K
+    Qbar = Q + K.T @ R @ K
     P_final = solve_lyapunov(Acl, Qbar)
     return P_final
 
@@ -151,10 +139,6 @@ def _lqr_gain(A: jnp.ndarray, B: jnp.ndarray, Q: jnp.ndarray, R: jnp.ndarray) ->
     K_row = jnp.linalg.solve(R, B.T @ P)  # (1, 4)
     return jnp.squeeze(K_row)
 
-
-# --------------------------------------------------------------------------- #
-# Public controller                                                            #
-# --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
 class LQRController(Controller):

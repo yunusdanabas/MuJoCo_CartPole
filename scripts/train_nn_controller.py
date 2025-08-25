@@ -19,10 +19,8 @@ from controller.nn_controller import (
 )
 from lib.utils import convert_4d_to_5d, compute_trajectory_cost
 from lib.visualizer import (
-    plot_trajectory_comparison2,
-    plot_energy,
-    plot_cost_comparison,
-    plot_control_forces_comparison,
+    compare_trajectories,
+    plot_trajectory,
 )
 
 # Load configuration
@@ -97,9 +95,18 @@ def main():
     plt.tight_layout()
     plt.show()
 
-    plot_trajectory_comparison2(ts, [states], labels=["NN Controller"],
-                                title_prefix="Swing-Up Performance")
-    plot_energy(ts, states, PARAMS_SYSTEM, title="Energy During Swing-Up")
+    # Convert 4D states to 5D for visualization
+    states_5d = jnp.array([convert_4d_to_5d(state) for state in states])
+    
+    # Plot trajectory comparison
+    compare_trajectories([states_5d], ["NN Controller"],
+                        title="NN Controller Swing-Up Performance",
+                        save_path="nn_swingup_comparison.png",
+                        show_plot=True)
+    
+    # Plot individual trajectory
+    plot_trajectory(states_5d, ts, title="NN Controller Swing-Up Trajectory",
+                   save_path="nn_swingup_trajectory.png", show_plot=True)
 
 if __name__ == "__main__":
     main()

@@ -2,12 +2,13 @@
 controller/nn_controller.py
 
 Deterministic, JAX-friendly neural network controller operating on the
-5-state representation [x, cos(theta), sin(theta), xdot, thdot]. If a 4-state
-[x, theta, xdot, thdot] vector is passed, it is up-cast to 5-state.
+5-state representation [x, cos(theta), sin(theta), xdot, thdot].
 
 - Equinox MLP backbone with tanh activations
 - Deterministic initialisation via `init_weights(seed)`
 - JIT-ready forward pass and batched support via base `Controller`
+- Optimized for 5-state only (no conversion overhead)
+- Action bounded to [-u_max, +u_max] for stability
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from controller.base import Controller
-from env.helpers import four_to_five
 
 __all__ = ["NNController", "init_weights"]
 
@@ -43,8 +43,14 @@ def _build_mlp(in_dim: int, hidden_dims: Sequence[int], *, key: jax.Array) -> eq
     return eqx.nn.Sequential(layers)
 
 
-def init_weights(seed: int = 0, hidden_dims: Sequence[int] = (64, 64)) -> eqx.Module:
-    """Deterministically initialise an Equinox MLP for 5D input and 1D output."""
+def init_weights(seed: int = 0, hidden_dims: Sequence[int] = (256, 256, 128, 128)) -> eqx.Module:
+    """Deterministically initialise an Equinox MLP for 5D input and 1D output.
+    
+    Larger architecture for better swing-up performance:
+    - 4 hidden layers instead of 2
+    - 256->256->128->128 instead of 64->64
+    - Better capacity for complex control policies
+    """
     key = jax.random.PRNGKey(seed)
     return _build_mlp(5, hidden_dims, key=key)
 
@@ -55,33 +61,34 @@ class NNController(Controller):
 
     Attributes:
         net: Equinox module mapping R^5 -> R
+        u_max: Maximum control force magnitude (action bound)
     """
 
     net: eqx.Module
+    u_max: float = 10.0  # Default action bound
 
     @classmethod
     def init(
         cls,
         *,
         seed: int = 0,
-        hidden_dims: Sequence[int] = (64, 64),
+        hidden_dims: Sequence[int] = (256, 256, 128, 128),  # Larger default architecture
         key: jax.Array | None = None,
+        u_max: float = 10.0,
     ) -> "NNController":
-        """Create controller with deterministic weights."""
+        """Create controller with deterministic weights and action bound."""
         if key is not None:
             # Backward compatibility: accept explicit PRNG key
             net = _build_mlp(5, hidden_dims, key=key)
         else:
             net = init_weights(seed, hidden_dims)
-        return cls(net=net)
+        return cls(net=net, u_max=u_max)
 
     def _force(self, state: jnp.ndarray, _t: float) -> jnp.ndarray:
-        """Compute NN force; up-casts 4-state to 5-state if needed."""
-        if state.shape[-1] == 4:
-            s5 = four_to_five(state)
-        else:
-            s5 = state
-        # Avoid passing PRNG keys to pure functions inside Sequential; our Tanh ignores key
-        return jnp.squeeze(self.net(s5, key=None))
+        """Compute NN force for 5-state representation, bounded to [-u_max, +u_max]."""
+        # Direct computation without state conversion checks
+        raw_force = jnp.squeeze(self.net(state, key=None))
+        # Bound action using tanh scaling: u_max * tanh(raw_force / u_max)
+        return self.u_max * jax.nn.tanh(raw_force / self.u_max)
 
 

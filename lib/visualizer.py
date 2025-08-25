@@ -3,9 +3,9 @@
 from __future__ import annotations
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
-from pathlib import Path
-from typing import Iterable, Optional, Tuple
 import numpy as np
+from pathlib import Path
+from typing import Optional, Union
 
 
 _RESULTS_DIR = Path("results")
@@ -17,12 +17,41 @@ def _ensure_dir() -> Path:
     return _RESULTS_DIR
 
 
+def _save_and_show_plot(fig: plt.Figure, save_path: Optional[str] = None, 
+                        show_plot: bool = False) -> plt.Figure:
+    """Helper function to save and/or show plots consistently."""
+    if save_path:
+        try:
+            plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches="tight")
+        except Exception as e:
+            print(f"Failed to save plot to {save_path}: {e}")
+    
+    if show_plot:
+        try:
+            plt.show()
+        except Exception as e:
+            print(f"Failed to show plot: {e}")
+    
+    return fig
+
+
+def _create_time_grid(length: int, dt: float = 0.01) -> jnp.ndarray:
+    """Create time grid for plotting."""
+    return jnp.arange(length) * dt
+
+
+def _extract_angles(trajectory: jnp.ndarray) -> jnp.ndarray:
+    """Extract angles from cos/sin representation."""
+    return jnp.arctan2(trajectory[:, 2], trajectory[:, 1])
+
+
 def plot_trajectory(
-    trajectory: jnp.ndarray,
-    time_points: jnp.ndarray = None,
+    trajectory: Union[jnp.ndarray, np.ndarray],
+    time_points: Optional[Union[jnp.ndarray, np.ndarray]] = None,
     title: str = "Cart-Pole Trajectory",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> plt.Figure:
     """
     Plot cart-pole trajectory with all state variables.
     
@@ -32,84 +61,74 @@ def plot_trajectory(
         time_points: Time array, created automatically if None
         title: Plot title
         save_path: Path to save figure, displays if None
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object
     """
-    # If 1D series provided, do a simple line plot
     if trajectory.ndim == 1:
+        # Simple 1D line plot
         if time_points is None:
-            time_points = jnp.arange(len(trajectory))
+            time_points = _create_time_grid(len(trajectory))
+        
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(time_points, trajectory)
         ax.set_title(title)
-        ax.set_xlabel('Time')
+        ax.set_xlabel('Time (s)')
         ax.set_ylabel('Value')
         ax.grid(True)
-    else:
-        if time_points is None:
-            time_points = jnp.arange(len(trajectory)) * 0.01
         
-        # Reconstruct angle from cos/sin representation
-        angles = jnp.arctan2(trajectory[:, 2], trajectory[:, 1])
-        
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        fig.suptitle(title, fontsize=16)
-        
-        # Position plot
-        axes[0, 0].plot(time_points, trajectory[:, 0])
-        axes[0, 0].set_title('Cart Position')
-        axes[0, 0].set_xlabel('Time (s)')
-        axes[0, 0].set_ylabel('Position (m)')
-        axes[0, 0].grid(True)
-        
-        # Angle plot
-        axes[0, 1].plot(time_points, jnp.degrees(angles))
-        axes[0, 1].set_title('Pendulum Angle')
-        axes[0, 1].set_xlabel('Time (s)')
-        axes[0, 1].set_ylabel('Angle (degrees)')
-        axes[0, 1].grid(True)
-        
-        # Cart velocity plot
-        axes[1, 0].plot(time_points, trajectory[:, 3])
-        axes[1, 0].set_title('Cart Velocity')
-        axes[1, 0].set_xlabel('Time (s)')
-        axes[1, 0].set_ylabel('Velocity (m/s)')
-        axes[1, 0].grid(True)
-        
-        # Angular velocity plot
-        axes[1, 1].plot(time_points, trajectory[:, 4])
-        axes[1, 1].set_title('Angular Velocity')
-        axes[1, 1].set_xlabel('Time (s)')
-        axes[1, 1].set_ylabel('Angular Velocity (rad/s)')
-        axes[1, 1].grid(True)
-        
-        plt.tight_layout()
+        return _save_and_show_plot(fig, save_path, show_plot)
     
-    if save_path:
-        plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
-        return fig
-    else:
-        # For tests, still return the figure even if showing
-        try:
-            plt.show()
-        finally:
-            return fig
+    # Multi-dimensional trajectory plot
+    if time_points is None:
+        time_points = _create_time_grid(len(trajectory))
+    
+    angles = _extract_angles(trajectory)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig.suptitle(title, fontsize=16)
+    
+    # State variable plots
+    plot_configs = [
+        (0, 0, trajectory[:, 0], 'Cart Position', 'Position (m)'),
+        (0, 1, jnp.degrees(angles), 'Pendulum Angle', 'Angle (degrees)'),
+        (1, 0, trajectory[:, 3], 'Cart Velocity', 'Velocity (m/s)'),
+        (1, 1, trajectory[:, 4], 'Angular Velocity', 'Angular Velocity (rad/s)')
+    ]
+    
+    for row, col, data, plot_title, ylabel in plot_configs:
+        axes[row, col].plot(time_points, data)
+        axes[row, col].set_title(plot_title)
+        axes[row, col].set_xlabel('Time (s)')
+        axes[row, col].set_ylabel(ylabel)
+        axes[row, col].grid(True)
+    
+    plt.tight_layout()
+    return _save_and_show_plot(fig, save_path, show_plot)
 
 
 def plot_training_history(
     history,
     title: str = "Training Progress",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> Optional[plt.Figure]:
     """
     Plot training cost history.
     
     Args:
         history: TrainingHistory object with costs
         title: Plot title
-        save_path: Path to save figure, displays if None
+        save_path: Path to save figure
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object or None if no history
     """
     if not history.costs:
         print("No training history to plot")
-        return
+        return None
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -122,10 +141,14 @@ def plot_training_history(
     
     # Add improvement annotation
     if len(history.costs) > 1:
-        improvement = history.get_improvement_ratio()
-        ax.text(0.02, 0.98, f'Improvement: {improvement:.3f}x', 
-                transform=ax.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        try:
+            improvement = history.get_improvement_ratio()
+            ax.text(0.02, 0.98, f'Improvement: {improvement:.3f}x', 
+                    transform=ax.transAxes, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        except AttributeError:
+            # Handle case where improvement method doesn't exist
+            pass
     
     # Log scale if useful
     if max(history.costs) / min(history.costs) > 100:
@@ -133,19 +156,16 @@ def plot_training_history(
         ax.set_ylabel('Cost (log scale)')
     
     plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
-    else:
-        plt.show()
+    return _save_and_show_plot(fig, save_path, show_plot)
 
 
 def plot_control_forces(
-    forces: jnp.ndarray,
-    time_points: jnp.ndarray = None,
+    forces: Union[jnp.ndarray, np.ndarray],
+    time_points: Optional[Union[jnp.ndarray, np.ndarray]] = None,
     title: str = "Control Forces",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> plt.Figure:
     """
     Plot control force history.
     
@@ -153,10 +173,14 @@ def plot_control_forces(
         forces: Control force array (N,)
         time_points: Time array, created automatically if None
         title: Plot title
-        save_path: Path to save figure, displays if None
+        save_path: Path to save figure
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object
     """
     if time_points is None:
-        time_points = jnp.arange(len(forces)) * 0.01
+        time_points = _create_time_grid(len(forces))
     
     fig, ax = plt.subplots(figsize=(10, 4))
     
@@ -167,34 +191,36 @@ def plot_control_forces(
     ax.grid(True, alpha=0.3)
     
     # Add statistics
-    stats_text = f'Max: {jnp.max(jnp.abs(forces)):.3f}N\nRMS: {jnp.sqrt(jnp.mean(forces**2)):.3f}N'
+    max_force = float(jnp.max(jnp.abs(forces)))
+    rms_force = float(jnp.sqrt(jnp.mean(forces**2)))
+    stats_text = f'Max: {max_force:.3f}N\nRMS: {rms_force:.3f}N'
     ax.text(0.02, 0.98, stats_text, 
             transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.8))
     
     plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
-    else:
-        plt.show()
+    return _save_and_show_plot(fig, save_path, show_plot)
 
 
 def plot_phase_portrait(
-    trajectory: jnp.ndarray,
+    trajectory: Union[jnp.ndarray, np.ndarray],
     title: str = "Phase Portrait",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> plt.Figure:
     """
     Plot phase portrait (angle vs angular velocity).
     
     Args:
         trajectory: State trajectory (N, 5) format
         title: Plot title  
-        save_path: Path to save figure, displays if None
+        save_path: Path to save figure
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object
     """
-    # Reconstruct angle
-    angles = jnp.arctan2(trajectory[:, 2], trajectory[:, 1])
+    angles = _extract_angles(trajectory)
     angular_velocities = trajectory[:, 4]
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -216,18 +242,16 @@ def plot_phase_portrait(
     plt.colorbar(scatter, label='Time Step')
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
-    else:
-        plt.show()
+    return _save_and_show_plot(fig, save_path, show_plot)
 
 
 def compare_trajectories(
-    trajectories: list[jnp.ndarray],
+    trajectories: list[Union[jnp.ndarray, np.ndarray]],
     labels: list[str],
     title: str = "Trajectory Comparison",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> plt.Figure:
     """
     Compare multiple trajectories on the same plots.
     
@@ -235,7 +259,14 @@ def compare_trajectories(
         trajectories: List of trajectory arrays
         labels: List of labels for each trajectory
         title: Plot title
-        save_path: Path to save figure, displays if None
+        save_path: Path to save figure
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object
+    
+    Raises:
+        ValueError: If number of trajectories doesn't match number of labels
     """
     if len(trajectories) != len(labels):
         raise ValueError("Number of trajectories must match number of labels")
@@ -246,70 +277,114 @@ def compare_trajectories(
     colors = plt.cm.tab10(np.linspace(0, 1, len(trajectories)))
     
     for i, (traj, label) in enumerate(zip(trajectories, labels)):
-        time_points = jnp.arange(len(traj)) * 0.01
-        angles = jnp.arctan2(traj[:, 2], traj[:, 1])
+        time_points = _create_time_grid(len(traj))
+        angles = _extract_angles(traj)
         
-        # Position
-        axes[0, 0].plot(time_points, traj[:, 0], color=colors[i], label=label)
+        # Plot all state variables
+        plot_data = [
+            (traj[:, 0], 'Cart Position', 'Position (m)'),
+            (jnp.degrees(angles), 'Pendulum Angle', 'Angle (degrees)'),
+            (traj[:, 3], 'Cart Velocity', 'Velocity (m/s)'),
+            (traj[:, 4], 'Angular Velocity', 'Angular Velocity (rad/s)')
+        ]
         
-        # Angle  
-        axes[0, 1].plot(time_points, jnp.degrees(angles), color=colors[i], label=label)
-        
-        # Cart velocity
-        axes[1, 0].plot(time_points, traj[:, 3], color=colors[i], label=label)
-        
-        # Angular velocity
-        axes[1, 1].plot(time_points, traj[:, 4], color=colors[i], label=label)
+        for j, (data, plot_title, ylabel) in enumerate(plot_data):
+            row, col = j // 2, j % 2
+            axes[row, col].plot(time_points, data, color=colors[i], label=label)
+            axes[row, col].set_title(plot_title)
+            axes[row, col].set_ylabel(ylabel)
+            axes[row, col].grid(True)
+            axes[row, col].legend()
     
-    # Configure axes
-    axes[0, 0].set_title('Cart Position')
-    axes[0, 0].set_ylabel('Position (m)')
-    axes[0, 0].grid(True)
-    axes[0, 0].legend()
-    
-    axes[0, 1].set_title('Pendulum Angle')
-    axes[0, 1].set_ylabel('Angle (degrees)')
-    axes[0, 1].grid(True)
-    axes[0, 1].legend()
-    
-    axes[1, 0].set_title('Cart Velocity')
-    axes[1, 0].set_xlabel('Time (s)')
-    axes[1, 0].set_ylabel('Velocity (m/s)')
-    axes[1, 0].grid(True)
-    axes[1, 0].legend()
-    
-    axes[1, 1].set_title('Angular Velocity')
-    axes[1, 1].set_xlabel('Time (s)')
-    axes[1, 1].set_ylabel('Angular Velocity (rad/s)')
-    axes[1, 1].grid(True)
-    axes[1, 1].legend()
+    # Set x-labels for bottom plots
+    for col in range(2):
+        axes[1, col].set_xlabel('Time (s)')
     
     plt.tight_layout()
+    return _save_and_show_plot(fig, save_path, show_plot)
+
+
+def plot_mujoco_simulation(
+    ts: Union[jnp.ndarray, np.ndarray],
+    x: Union[jnp.ndarray, np.ndarray],
+    theta: Union[jnp.ndarray, np.ndarray],
+    xdot: Union[jnp.ndarray, np.ndarray],
+    thdot: Union[jnp.ndarray, np.ndarray],
+    u: Union[jnp.ndarray, np.ndarray],
+    d: Union[jnp.ndarray, np.ndarray],
+    title: str = "MuJoCo Cart-Pole Simulation Results",
+    save_path: Optional[str] = None,
+    show_plot: bool = False
+) -> plt.Figure:
+    """
+    Plot MuJoCo simulation results as a comprehensive 2x3 grid.
     
-    if save_path:
-        plt.savefig(_ensure_dir() / save_path, dpi=150, bbox_inches='tight')
-    else:
-        plt.show()
+    Args:
+        ts: Time array
+        x: Cart position array
+        theta: Pendulum angle array (radians)
+        xdot: Cart velocity array
+        thdot: Angular velocity array
+        u: Control force array
+        d: Disturbance force array
+        title: Plot title
+        save_path: Path to save figure
+        show_plot: Whether to display the plot interactively
+    
+    Returns:
+        matplotlib Figure object
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(14, 6))
+    fig.suptitle(title, fontsize=16)
+
+    # Define plot configurations
+    plot_configs = [
+        (0, 0, x, "Cart Position", "x [m]"),
+        (0, 1, np.degrees(theta), "Pendulum Angle", "theta [deg]"),
+        (0, 2, xdot, "Cart Velocity", "xdot [m/s]"),
+        (1, 0, thdot, "Angular Velocity", "thdot [rad/s]"),
+        (1, 1, u, "Control Force (u)", "N"),
+        (1, 2, d, "Disturbance (d)", "N")
+    ]
+
+    for row, col, data, plot_title, ylabel in plot_configs:
+        axes[row, col].plot(ts, data)
+        axes[row, col].set_title(plot_title)
+        axes[row, col].set_xlabel("t [s]")
+        axes[row, col].set_ylabel(ylabel)
+        axes[row, col].grid(True)
+    
+    plt.tight_layout()
+    return _save_and_show_plot(fig, save_path, show_plot)
+
+
+# Alias for backward compatibility
+save_mujoco_plot = plot_mujoco_simulation
 
 
 def create_animation(
-    trajectory: jnp.ndarray,
+    trajectory: Union[jnp.ndarray, np.ndarray],
     dt: float = 0.01,
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None,
+    show_plot: bool = True
+) -> Optional[plt.Figure]:
     """
     Create animated visualization of cart-pole motion.
     
     Args:
         trajectory: State trajectory (N, 5) format
         dt: Time step between frames
-        save_path: Path to save animation, displays if None
+        save_path: Path to save animation
+        show_plot: Whether to display the animation (default True for animations)
+    
+    Returns:
+        matplotlib Figure object or None if animation creation fails
     """
     try:
         from matplotlib.animation import FuncAnimation
     except ImportError:
         print("Animation requires matplotlib.animation, skipping...")
-        return
+        return None
     
     # Setup figure
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -330,7 +405,7 @@ def create_animation(
     
     # Set axis limits
     x_positions = trajectory[:, 0]
-    x_range = max(jnp.max(jnp.abs(x_positions)) + 2, 3)
+    x_range = max(float(jnp.max(jnp.abs(x_positions))) + 2, 3)
     ax.set_xlim(-x_range, x_range)
     ax.set_ylim(-0.5, 2)
     ax.set_aspect('equal')
@@ -365,7 +440,10 @@ def create_animation(
             anim.save(_ensure_dir() / save_path, writer='pillow', fps=1/dt)
         except Exception as e:
             print(f"Failed to save animation: {e}")
-            plt.show()
-    else:
+            if show_plot:
+                plt.show()
+    elif show_plot:
         plt.show()
+    
+    return fig
 

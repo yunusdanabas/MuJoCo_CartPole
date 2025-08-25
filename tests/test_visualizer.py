@@ -12,7 +12,7 @@ def test_visualizer_output(tmp_path):
     input_data = jnp.array([1, 2, 3])
     
     # Test that we can create a plot
-    fig = plot_trajectory(input_data, input_data)
+    fig = plot_trajectory(input_data, input_data, show_plot=False)
     assert fig is not None
     
     # Test that we can save the plot
@@ -27,7 +27,7 @@ def test_visualizer_edge_case(tmp_path):
     # Test with empty data
     empty_data = jnp.array([])
     try:
-        fig = plot_trajectory(empty_data, empty_data)
+        fig = plot_trajectory(empty_data, empty_data, show_plot=False)
         # If it doesn't raise an error, save and check
         if fig is not None:
             outfile = tmp_path / "empty_plot.png"
@@ -43,7 +43,7 @@ def test_plot_trajectory_basic(tmp_path):
     xs = jnp.linspace(0, 1, 10)
     ys = jnp.sin(2 * jnp.pi * xs)
     
-    fig = plot_trajectory(xs, ys)
+    fig = plot_trajectory(ys, xs, show_plot=False)
     outfile = tmp_path / "traj.png"
     fig.savefig(outfile)
     assert outfile.exists() and outfile.stat().st_size > 0
@@ -54,13 +54,13 @@ def test_plot_trajectory_with_different_sizes(tmp_path):
     # Small dataset
     xs_small = jnp.array([0., 1.])
     ys_small = jnp.array([0., 1.])
-    fig_small = plot_trajectory(xs_small, ys_small)
+    fig_small = plot_trajectory(ys_small, xs_small, show_plot=False)
     assert fig_small is not None
     
     # Larger dataset
     xs_large = jnp.linspace(0, 10, 100)
     ys_large = jnp.cos(xs_large)
-    fig_large = plot_trajectory(xs_large, ys_large)
+    fig_large = plot_trajectory(ys_large, xs_large, show_plot=False)
     assert fig_large is not None
     
     # Save both to ensure they work
