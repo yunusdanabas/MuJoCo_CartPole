@@ -1,27 +1,34 @@
-# lib/utils.py
-# Description: Utility functions for sampling initial conditions, plotting, and computing costs and energies for a cart-pole system.
+"""
+Utility Functions for Cart-Pole System
+
+Provides sampling, visualization, cost computation, and mathematical utilities
+for cart-pole control system analysis and training.
+"""
+
+from __future__ import annotations
+from typing import Optional, Tuple, List, Callable
 
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Optional, Tuple
 
-###############################################################################
-#                         Initial Condition Sampler                           #
-###############################################################################
+
+# ============================================================================
+# Initial Condition Sampling
+# ============================================================================
 
 def sample_initial_conditions(
-    num_samples,
-    x_range=(-0.5, 0.5),
-    theta_range=(-0.5, 0.5),
-    xdot_range=(-0.5, 0.5),
-    thetadot_range=(-0.5, 0.5),
-    key=None
+    num_samples: int,
+    x_range: Tuple[float, float] = (-0.5, 0.5),
+    theta_range: Tuple[float, float] = (-0.5, 0.5),
+    xdot_range: Tuple[float, float] = (-0.5, 0.5),
+    thetadot_range: Tuple[float, float] = (-0.5, 0.5),
+    key: Optional[jax.random.PRNGKey] = None
 ) -> jnp.ndarray:
     """
-    Generates random initial conditions within specified ranges.
-
+    Generate random initial conditions within specified ranges.
+    
     Args:
         num_samples: Number of initial conditions to sample
         x_range: (min, max) range for cart position
@@ -29,7 +36,7 @@ def sample_initial_conditions(
         xdot_range: (min, max) range for cart velocity
         thetadot_range: (min, max) range for pendulum angular velocity
         key: JAX random key. If None, uses NumPy random
-
+    
     Returns:
         Array of shape (num_samples, 4) containing [x, theta, x_dot, theta_dot]
     """
@@ -40,8 +47,15 @@ def sample_initial_conditions(
         return _sample_with_jax(num_samples, x_range, theta_range,
                                xdot_range, thetadot_range, key)
 
-def _sample_with_numpy(num_samples, x_r, theta_r, xdot_r, thetadot_r):
-    """NumPy-based sampling for non-JIT environments"""
+
+def _sample_with_numpy(
+    num_samples: int, 
+    x_r: Tuple[float, float], 
+    theta_r: Tuple[float, float],
+    xdot_r: Tuple[float, float], 
+    thetadot_r: Tuple[float, float]
+) -> jnp.ndarray:
+    """NumPy-based sampling for non-JIT environments."""
     return jnp.array(np.column_stack([
         np.random.uniform(*x_r, num_samples),
         np.random.uniform(*theta_r, num_samples),
@@ -49,34 +63,35 @@ def _sample_with_numpy(num_samples, x_r, theta_r, xdot_r, thetadot_r):
         np.random.uniform(*thetadot_r, num_samples)
     ]), dtype=jnp.float32)
 
-def _sample_with_jax(num_samples, x_r, theta_r, xdot_r, thetadot_r, key):
+
+def _sample_with_jax(
+    num_samples: int, 
+    x_r: Tuple[float, float], 
+    theta_r: Tuple[float, float],
+    xdot_r: Tuple[float, float], 
+    thetadot_r: Tuple[float, float], 
+    key: jax.random.PRNGKey
+) -> jnp.ndarray:
+    """JAX-based sampling for JIT-compatible environments."""
     keys = jax.random.split(key, 4)
     return jnp.column_stack([
-        jax.random.uniform(keys[0], (num_samples,), 
-            minval=x_r[0], maxval=x_r[1]),
-        jax.random.uniform(keys[1], (num_samples,), 
-            minval=theta_r[0], maxval=theta_r[1]),
-        jax.random.uniform(keys[2], (num_samples,), 
-            minval=xdot_r[0], maxval=xdot_r[1]),
-        jax.random.uniform(keys[3], (num_samples,), 
-            minval=thetadot_r[0], maxval=thetadot_r[1]),
+        jax.random.uniform(keys[0], (num_samples,), minval=x_r[0], maxval=x_r[1]),
+        jax.random.uniform(keys[1], (num_samples,), minval=theta_r[0], maxval=theta_r[1]),
+        jax.random.uniform(keys[2], (num_samples,), minval=xdot_r[0], maxval=xdot_r[1]),
+        jax.random.uniform(keys[3], (num_samples,), minval=thetadot_r[0], maxval=thetadot_r[1]),
     ])
 
-###############################################################################
-#                           Visualization Utilities                           #
-###############################################################################
 
-def plot_cost(cost_history: jnp.ndarray, 
-             title: str = "Cost Over Iterations", 
-             log_scale: bool = False) -> None:
-    """
-    Plots training cost history.
-    
-    Args:
-        cost_history: Array of cost values per iteration
-        title: Plot title
-        log_scale: Whether to use logarithmic y-axis
-    """
+# ============================================================================
+# Visualization Utilities
+# ============================================================================
+
+def plot_cost(
+    cost_history: jnp.ndarray, 
+    title: str = "Cost Over Iterations", 
+    log_scale: bool = False
+) -> None:
+    """Plot training cost history."""
     plt.figure(figsize=(8, 5))
     (plt.semilogy if log_scale else plt.plot)(cost_history)
     plt.title(title)
@@ -85,14 +100,15 @@ def plot_cost(cost_history: jnp.ndarray,
     plt.grid(True)
     plt.show()
 
+
 def plot_trajectory_comparison(
     t: jnp.ndarray,
-    states_list: list[jnp.ndarray],
-    labels: Optional[list[str]] = None,
+    states_list: List[jnp.ndarray],
+    labels: Optional[List[str]] = None,
     title_prefix: str = "Trajectory Comparison"
 ) -> None:
     """
-    Compares multiple trajectories through cart position and pendulum angle.
+    Compare multiple trajectories through cart position and pendulum angle.
     
     Args:
         t: Time vector shape (N,)
@@ -112,26 +128,11 @@ def plot_trajectory_comparison(
         plt.plot(t, np.rad2deg(theta))
     _format_plot("Pendulum Angle (theta)", "theta (degrees)", labels, title_prefix)
 
-def _plot_comparison_sub(t, states_list, idx, ylabel, title_suffix, labels, prefix):
-    """Helper for trajectory comparison subplots"""
-    plt.figure(figsize=(10, 6))
-    for states, label in zip(states_list, labels):
-        plt.plot(t, states[:, idx], label=label)
-    _format_plot(title_suffix, ylabel, labels, prefix)
 
-def _format_plot(ylabel, title_suffix, labels, prefix):
-    """Shared plot formatting"""
-    plt.title(f"{prefix}: {title_suffix}")
-    plt.xlabel("Time (s)")
-    plt.ylabel(ylabel)
-    plt.grid(True)
-    plt.legend()
-    plt.show()
-
-def plot_trajectory_comparison2(
+def plot_comprehensive_trajectory_comparison(
     t: jnp.ndarray,
-    states_list: list[jnp.ndarray],
-    labels: Optional[list[str]] = None,
+    states_list: List[jnp.ndarray],
+    labels: Optional[List[str]] = None,
     title_prefix: str = "Trajectory Comparison"
 ) -> None:
     """
@@ -165,18 +166,114 @@ def plot_trajectory_comparison2(
     plt.suptitle(title_prefix, y=1.02)
     plt.show()
 
-###############################################################################
-#                           Analytical Utilities                             #
-###############################################################################
+
+def plot_energy_history(
+    t: jnp.ndarray,
+    states: jnp.ndarray,
+    params: Tuple[float, float, float, float],
+    desired_energy: Optional[float] = None,
+    title: str = "Energy Over Time"
+) -> None:
+    """
+    Plot energy components with optional desired energy reference.
+    
+    Args:
+        t: Time vector (N,)
+        states: State trajectories (N x 4)
+        params: System parameters (mc, mp, l, g)
+        desired_energy: Reference energy value
+        title: Plot title
+    """
+    energies = compute_energy(states, params)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(t, energies, label="Total Energy")
+    if desired_energy is not None:
+        plt.axhline(desired_energy, c='r', ls='--', label="Desired Energy")
+    plt.title(title)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Energy (J)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def plot_control_forces(
+    t: jnp.ndarray,
+    forces_list: List[jnp.ndarray],
+    labels: List[str],
+    title: str = "Control Forces Comparison"
+) -> None:
+    """Plot multiple control force histories."""
+    plt.figure(figsize=(10, 4))
+    for forces, label in zip(forces_list, labels):
+        plt.plot(t, forces, label=label)
+    plt.title(title)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Force (N)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_cost_comparison(
+    linear_cost: float,
+    lqr_cost: float,
+    title: str = "Trajectory Cost Comparison"
+) -> None:
+    """Bar plot comparing costs between two controllers."""
+    plt.figure(figsize=(6, 4))
+    plt.bar(["Trained Controller", "LQR"], [linear_cost, lqr_cost], 
+            color=["blue", "orange"])
+    plt.title(title)
+    plt.ylabel("Total Cost")
+    plt.grid(True)
+    plt.show()
+
+
+# ============================================================================
+# Helper Functions for Visualization
+# ============================================================================
+
+def _plot_comparison_sub(
+    t: jnp.ndarray, 
+    states_list: List[jnp.ndarray], 
+    idx: int, 
+    ylabel: str, 
+    title_suffix: str, 
+    labels: List[str], 
+    prefix: str
+) -> None:
+    """Helper for trajectory comparison subplots."""
+    plt.figure(figsize=(10, 6))
+    for states, label in zip(states_list, labels):
+        plt.plot(t, states[:, idx], label=label)
+    _format_plot(title_suffix, ylabel, labels, prefix)
+
+
+def _format_plot(ylabel: str, title_suffix: str, labels: List[str], prefix: str) -> None:
+    """Shared plot formatting."""
+    plt.title(f"{prefix}: {title_suffix}")
+    plt.xlabel("Time (s)")
+    plt.ylabel(ylabel)
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+
+# ============================================================================
+# Cost and Energy Computation
+# ============================================================================
 
 def compute_trajectory_cost(
     Q: jnp.ndarray,
     states: jnp.ndarray,
-    controller_func: callable,
+    controller_func: Callable,
     t: jnp.ndarray
 ) -> Tuple[float, jnp.ndarray]:
     """
-    Computes LQR-style trajectory cost.
+    Compute LQR-style trajectory cost.
     
     Args:
         Q: State cost matrix (4x4 or 5x5)
@@ -194,12 +291,13 @@ def compute_trajectory_cost(
     total_cost = jnp.sum(state_costs + forces**2) * dt
     return total_cost, forces
 
+
 def compute_energy(
     states: jnp.ndarray,
     params: Tuple[float, float, float, float]
 ) -> jnp.ndarray:
     """
-    Computes total energy for 4D states [x, theta, x_dot, theta_dot].
+    Compute total energy for 4D states [x, theta, x_dot, theta_dot].
     
     Args:
         states: Array of states (N x 4)
@@ -210,192 +308,24 @@ def compute_energy(
     """
     mc, mp, l, g = params
     x, theta, x_dot, theta_dot = states.T
-    kinetic = 0.5*(mc + mp)*x_dot**2 - mp*l*jnp.cos(theta)*x_dot*theta_dot + 0.5*mp*(l**2)*theta_dot**2
-    potential = mp*g*l*(1 - jnp.cos(theta))
+    
+    # Kinetic energy components
+    kinetic = (0.5 * (mc + mp) * x_dot**2 - 
+               mp * l * jnp.cos(theta) * x_dot * theta_dot + 
+               0.5 * mp * (l**2) * theta_dot**2)
+    
+    # Potential energy
+    potential = mp * g * l * (1 - jnp.cos(theta))
+    
     return kinetic + potential
 
-###############################################################################
-#                           State Conversion                                 #
-###############################################################################
 
-def convert_4d_to_5d(state_4d: jnp.ndarray) -> jnp.ndarray:
-    """
-    Converts 4D state [x, theta, x_dot, theta_dot] to 
-    5D [x, cos(theta), sin(theta), x_dot, theta_dot].
-    """
-    x, theta, x_dot, theta_dot = state_4d
-    return jnp.array([
-        x,
-        jnp.cos(theta),
-        jnp.sin(theta),
-        x_dot,
-        theta_dot
-    ])
-
-def convert_5d_to_4d(state_5d: jnp.ndarray) -> jnp.ndarray:
-    """
-    Converts 5D state [x, cos(theta), sin(theta), x_dot, theta_dot] 
-    back to 4D [x, theta, x_dot, theta_dot].
-    """
-    x, cos_t, sin_t, x_dot, theta_dot = state_5d
-    return jnp.array([
-        x,
-        jnp.arctan2(sin_t, cos_t),
-        x_dot,
-        theta_dot
-    ])
-
-###############################################################################
-#                           Specialized Plots                                #
-###############################################################################
-
-def plot_energy_history(
-    t: jnp.ndarray,
-    states: jnp.ndarray,
-    params: Tuple[float, float, float, float],
-    desired_energy: Optional[float] = None,
-    title: str = "Energy Over Time"
-) -> None:
-    """
-    Plots energy components with optional desired energy reference.
-    
-    Args:
-        t: Time vector (N,)
-        states: State trajectories (N x 4)
-        params: System parameters (mc, mp, l, g)
-        desired_energy: Reference energy value
-        title: Plot title
-    """
-    mc, mp, l, g = params
-    energies = compute_energy(states, params)
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(t, energies, label="Total Energy")
-    if desired_energy is not None:
-        plt.axhline(desired_energy, c='r', ls='--', label="Desired Energy")
-    plt.title(title)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Energy (J)")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-def plot_control_forces(
-    t: jnp.ndarray,
-    forces_list: list[jnp.ndarray],
-    labels: list[str],
-    title: str = "Control Forces Comparison"
-) -> None:
-    """
-    Plots multiple control force histories.
-    
-    Args:
-        t: Time vector (N,)
-        forces_list: List of force arrays (each N,)
-        labels: Legend labels
-        title: Plot title
-    """
-    plt.figure(figsize=(10, 4))
-    for forces, label in zip(forces_list, labels):
-        plt.plot(t, forces, label=label)
-    plt.title(title)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Force (N)")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-    # lib/utils.py (additional functions)
-
-def plot_energy(
-    t: jnp.ndarray,
-    states: jnp.ndarray,
-    params: Tuple[float, float, float, float],
-    title: str = "Energy Over Time"
-) -> None:
-    """
-    Plot total energy of the system over time.
-    
-    Args:
-        t: Time vector (N,)
-        states: State trajectories (N, 4) [x, theta, x_dot, theta_dot]
-        params: Tuple (mc, mp, l, g)
-        title: Plot title
-    """
-    mc, mp, l, g = params
-    
-    def compute_energy(state):
-        x, theta, x_dot, theta_dot = state
-        kinetic = 0.5*(mc + mp)*x_dot**2 - mp*l*jnp.cos(theta)*x_dot*theta_dot + 0.5*mp*(l**2)*theta_dot**2
-        potential = mp*g*l*(1 - jnp.cos(theta))
-        return kinetic + potential
-    
-    energies = jax.vmap(compute_energy)(states)
-    energies = np.array(energies)  # Convert to NumPy for plotting
-    
-    plt.figure(figsize=(8, 5))
-    plt.plot(t, energies)
-    plt.title(title)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Energy (J)")
-    plt.grid(True)
-    plt.show()
-
-def plot_cost_comparison(
-    linear_cost: float,
-    lqr_cost: float,
-    title: str = "Trajectory Cost Comparison"
-) -> None:
-    """
-    Bar plot comparing costs between two controllers.
-    
-    Args:
-        linear_cost: Cost from linear/NN controller
-        lqr_cost: Cost from LQR controller
-        title: Plot title
-    """
-    plt.figure(figsize=(6, 4))
-    plt.bar(["Trained Controller", "LQR"], [linear_cost, lqr_cost], color=["blue", "orange"])
-    plt.title(title)
-    plt.ylabel("Total Cost")
-    plt.grid(True)
-    plt.show()
-
-def plot_control_forces_comparison(
-    t: jnp.ndarray,
-    controller1_forces: jnp.ndarray,
-    controller2_forces: jnp.ndarray,
-    labels: Tuple[str, str] = ("Trained Controller", "LQR"),
-    title: str = "Control Forces Comparison"
-) -> None:
-    """
-    Plot control forces from two controllers.
-    
-    Args:
-        t: Time vector (N,)
-        controller1_forces: Force array from first controller (N,)
-        controller2_forces: Force array from second controller (N,)
-        labels: Legend labels
-        title: Plot title
-    """
-    plt.figure(figsize=(8, 4))
-    plt.plot(t, np.array(controller1_forces), label=labels[0])
-    plt.plot(t, np.array(controller2_forces), label=labels[1], linestyle="--")
-    plt.title(title)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Force (N)")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-def compute_energy_nn(
+def compute_energy_5d(
     states: jnp.ndarray,
     params: Tuple[float, float, float, float]
 ) -> jnp.ndarray:
     """
-    Compute total energy for 5D states [x, cosθ, sinθ, ẋ, θ̇]
+    Compute total energy for 5D states [x, cosθ, sinθ, ẋ, θ̇].
     
     Args:
         states: (N, 5) array of states
@@ -417,64 +347,64 @@ def compute_energy_nn(
     
     return trans_energy + rot_energy + coriolis + potential
 
-###############################################################################
-#                           Mathematical Utilities                           #
-###############################################################################
+
+# ============================================================================
+# State Conversion Utilities
+# ============================================================================
+
+def convert_4d_to_5d(state_4d: jnp.ndarray) -> jnp.ndarray:
+    """
+    Convert 4D state [x, theta, x_dot, theta_dot] to 
+    5D [x, cos(theta), sin(theta), x_dot, theta_dot].
+    """
+    x, theta, x_dot, theta_dot = state_4d
+    return jnp.array([
+        x,
+        jnp.cos(theta),
+        jnp.sin(theta),
+        x_dot,
+        theta_dot
+    ])
+
+
+def convert_5d_to_4d(state_5d: jnp.ndarray) -> jnp.ndarray:
+    """
+    Convert 5D state [x, cos(theta), sin(theta), x_dot, theta_dot] 
+    back to 4D [x, theta, x_dot, theta_dot].
+    """
+    x, cos_t, sin_t, x_dot, theta_dot = state_5d
+    return jnp.array([
+        x,
+        jnp.arctan2(sin_t, cos_t),
+        x_dot,
+        theta_dot
+    ])
+
+
+# ============================================================================
+# Mathematical Utilities
+# ============================================================================
 
 def clamp(x: jnp.ndarray, min_val: float, max_val: float) -> jnp.ndarray:
-    """
-    Clamps array values to be within [min_val, max_val].
-    
-    Args:
-        x: Input array
-        min_val: Minimum allowed value
-        max_val: Maximum allowed value
-        
-    Returns:
-        Clamped array
-    """
+    """Clamp array values to be within [min_val, max_val]."""
     return jnp.clip(x, min_val, max_val)
 
 
 def clip_by_norm(x: jnp.ndarray, max_norm: float) -> jnp.ndarray:
-    """
-    Clips vector to have maximum norm while preserving direction.
-    
-    Args:
-        x: Input vector
-        max_norm: Maximum allowed norm
-        
-    Returns:
-        Clipped vector
-    """
+    """Clip vector to have maximum norm while preserving direction."""
     norm = jnp.linalg.norm(x)
     return jnp.where(norm > max_norm, x * (max_norm / norm), x)
 
 
-def safe_divide(numerator: jnp.ndarray, denominator: jnp.ndarray, 
-                eps: float = 1e-8) -> jnp.ndarray:
-    """
-    Safe division that avoids division by zero.
-    
-    Args:
-        numerator: Numerator array
-        denominator: Denominator array
-        eps: Small value to add to denominator
-        
-    Returns:
-        Result of safe division
-    """
+def safe_divide(
+    numerator: jnp.ndarray, 
+    denominator: jnp.ndarray, 
+    eps: float = 1e-8
+) -> jnp.ndarray:
+    """Safe division that avoids division by zero."""
     return numerator / (denominator + eps)
 
 
 def normalize_angle(angle: jnp.ndarray) -> jnp.ndarray:
-    """
-    Normalizes angle to [-π, π] range.
-    
-    Args:
-        angle: Input angle(s) in radians
-        
-    Returns:
-        Normalized angle(s)
-    """
+    """Normalize angle to [-π, π] range."""
     return jnp.arctan2(jnp.sin(angle), jnp.cos(angle))

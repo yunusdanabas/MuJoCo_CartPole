@@ -2,7 +2,10 @@
 controller/linear_controller.py
 
 Linear feedback controller for cart-pole systems.
-Implements u = -K @ state with JIT compilation by default.
+Implements u = -K @ state with JIT compilation.
+
+4D state: [x, θ, ẋ, θ̇] 
+5D state: [x, cos(θ), sin(θ), ẋ, θ̇]
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from env.helpers import four_to_five
 @dataclass(frozen=True)
 class LinearController(Controller):
     """Linear feedback controller: u = -K · state (clipped)."""
-    K: jnp.ndarray          # shape (5,) preferred; (4,) supported for 4D
+    K: jnp.ndarray  # shape (5,) or (4,) for gains
 
     def __post_init__(self):
         """Initialize JIT functions and validate dimensions."""
@@ -31,11 +34,12 @@ class LinearController(Controller):
         super().__post_init__()
     
     def _force_impl(self, state: jnp.ndarray, t: float) -> jnp.ndarray:
+        """Compute control force based on state and gain dimensions."""
         if state.shape[-1] == 4:
             if self.K.shape == (4,):
                 raw = -jnp.dot(self.K, state)
             else:
-                # Up-cast state to 5D for 5D gains
+                # Convert 4D state to 5D for 5D gains
                 s5 = four_to_five(state)
                 raw = -jnp.dot(self.K, s5)
         else:
@@ -88,7 +92,6 @@ class LinearController(Controller):
 
 def create_pd_controller(kp_pos=1.0, kd_pos=1.0, kp_angle=20.0, kd_angle=2.0):
     """Create PD controller with specified gains."""
-    # Target: [x=0, cos(θ)=1, sin(θ)=0, ẋ=0, θ̇=0]
     K = jnp.array([
         kp_pos,    # x position
         -kp_angle, # cos(θ) - negative to push toward 1

@@ -1,6 +1,8 @@
 """
-env/cartpole.py - JAX cart-pole dynamics
-State format: [x, cos(θ), sin(θ), ẋ, θ̇]
+Cart-Pole Dynamics Environment
+
+JAX-based implementation of cart-pole system dynamics with 5D state format:
+[x, cos(θ), sin(θ), ẋ, θ̇]
 """
 
 from __future__ import annotations
@@ -13,21 +15,25 @@ from jaxtyping import Array, Float
 
 from env.helpers import inverse_mass_matrix, total_energy
 
+
 @dataclass(frozen=True)
 class CartPoleParams:
-    """Cart-pole physical parameters"""
-    mc: float = 1.0  # Cart mass
-    mp: float = 1.0  # Pole mass
-    l : float = 1.0  # Pole length
-    g : float = 9.81 # Gravity
+    """Cart-pole physical parameters."""
+    mc: float = 1.0   # Cart mass (kg)
+    mp: float = 1.0   # Pole mass (kg)
+    l: float = 1.0    # Pole length (m)
+    g: float = 9.81   # Gravity (m/s²)
 
-# ---------------------------------------------------------------------------
-# 1. Cache: keyed **only** on physical parameters so controller changes
-#    do NOT trigger a recompilation.
-# ---------------------------------------------------------------------------
+
+# ============================================================================
+# Dynamics Cache
+# ============================================================================
+
 _dyn_cache: dict[int, callable] = {}
 
+
 def _get_cached_kernel(params: CartPoleParams):
+    """Get cached JIT-compiled dynamics kernel for given parameters."""
     key = id(params)
     if key not in _dyn_cache:
         def _kernel(state, force):
@@ -35,9 +41,11 @@ def _get_cached_kernel(params: CartPoleParams):
         _dyn_cache[key] = jax.jit(_kernel)
     return _dyn_cache[key]
 
-# ---------------------------------------------------------------------------
-# 2. Pure physics kernel – no controller inside the JIT
-# ---------------------------------------------------------------------------
+
+# ============================================================================
+# Core Dynamics
+# ============================================================================
+
 @partial(jax.jit, static_argnames=("params",))
 def _dynamics_core(
     state: Float[Array, "5"],
@@ -45,7 +53,17 @@ def _dynamics_core(
     *,
     params: CartPoleParams,
 ) -> Float[Array, "5"]:
-    """Cart-pole equations of motion for a single state and scalar force."""
+    """
+    Cart-pole equations of motion for a single state and scalar force.
+    
+    Args:
+        state: State vector [x, cos(θ), sin(θ), ẋ, θ̇]
+        force: Applied force (N)
+        params: Physical parameters
+        
+    Returns:
+        State derivatives [ẋ, -sin(θ)θ̇, cos(θ)θ̇, ẍ, θ̈]
+    """
     x, cos_theta, sin_theta, xdot, thdot = state
     mp, l, g = params.mp, params.l, params.g
 
@@ -62,9 +80,11 @@ def _dynamics_core(
 
     return jnp.array([xdot, cos_theta_dot, sin_theta_dot, xddot, thddot])
 
-# ---------------------------------------------------------------------------
-# 3. Vectorised wrapper around the core
-# ---------------------------------------------------------------------------
+
+# ============================================================================
+# Vectorized Dynamics
+# ============================================================================
+
 @partial(jax.jit, static_argnames=("params",))
 def _dynamics_batched(
     states: Float[Array, "batch 5"],
@@ -72,7 +92,9 @@ def _dynamics_batched(
     *,
     params: CartPoleParams,
 ) -> Float[Array, "batch 5"]:
+    """Vectorized dynamics for batch of state vectors."""
     return jax.vmap(lambda s, f: _dynamics_core(s, f, params=params))(states, forces)
+
 
 def dynamics(
     state: Float[Array, "... 5"],
@@ -104,24 +126,26 @@ def dynamics(
         force = controller(state, t)
         return kernel(state, force)
 
+
 def batch_dynamics(
     states: Float[Array, "batch 5"],
     t: float,
     params: CartPoleParams = CartPoleParams(),
     controller=lambda s, t: 0.0,
 ) -> Float[Array, "batch 5"]:
-    """Vectorized dynamics for batch of state vectors"""
+    """Vectorized dynamics for batch of state vectors."""
     if states.shape[-1] != 5:
         raise ValueError(f"Expected state format [x, cos(θ), sin(θ), ẋ, θ̇], got shape {states.shape}")
 
     forces = jax.vmap(controller, in_axes=(0, None))(states, t)
     return _dynamics_batched(states, forces, params=params)
 
+
 def compute_energy(
     state: Float[Array, "... 5"],
     params: CartPoleParams = CartPoleParams()
 ) -> Float[Array, "..."]:
-    """Compute total energy for state vector(s)"""
+    """Compute total energy for state vector(s)."""
     if state.shape[-1] != 5:
         raise ValueError(f"Expected state format [x, cos(θ), sin(θ), ẋ, θ̇], got shape {state.shape}")
 
@@ -129,4 +153,3 @@ def compute_energy(
         return jax.vmap(total_energy, in_axes=(0, None))(state, params)
     else:
         return total_energy(state, params)
-

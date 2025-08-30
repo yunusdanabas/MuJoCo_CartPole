@@ -1,35 +1,22 @@
 """
-Time-invariant LQR controller (pure JAX implementation).
+LQR Controller for Cart-Pole Systems
 
-- Works with the project-wide 5-state representation [x, cos(theta), sin(theta), xdot, thdot]
-  by converting to the 4-state small-angle linearisation order [x, theta, xdot, thdot] internally.
-- Linearises about the upright equilibrium (theta ≈ 0) and solves the continuous-time
-  Algebraic Riccati Equation (ARE) once at initialisation.
-- No hard-coded gains; K is derived from (A, B, Q, R).
+Implements optimal linear-quadratic regulator control using SciPy's solve_continuous_are.
+Supports both 4D [x, θ, ẋ, θ̇] and 5D [x, cos(θ), sin(θ), ẋ, θ̇] state formats.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-try:
-    import yaml  # Optional configuration support
-except ImportError:  # pragma: no cover - yaml is optional
-    yaml = None
+from scipy.linalg import solve_continuous_are
 
 from controller.base import Controller
 from env.cartpole import CartPoleParams
 from env.helpers import five_to_four
-
-try:  # Optional SciPy for a stabilising initial policy
-    from scipy.linalg import solve_continuous_are as _scipy_care
-except Exception:  # pragma: no cover
-    _scipy_care = None
 
 __all__ = [
     "LQRController",
@@ -40,155 +27,82 @@ __all__ = [
 
 
 def _linearise(params: CartPoleParams) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Return continuous-time linearisation (A, B) about upright equilibrium.
-
-    Linearisation uses the small-angle 4-state order [x, θ, ẋ, θ̇].
-
-    Args:
-        params: Physical parameters of the cart-pole.
-
-    Returns:
-        (A, B): Continuous-time linearised dynamics matrices.
-    """
+    """Linearize cart-pole system about upright equilibrium (θ=0)."""
     mc, mp, l, g = params.mc, params.mp, params.l, params.g
     
-    # State matrix A (4x4)
+    # State matrix A (4x4) - linearized dynamics
     A = jnp.array([
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-        [0.0, mp * g / mc, 0.0, 0.0],
-        [0.0, g * (mc + mp) / (l * mc), 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],                    # ẋ = ẋ
+        [0.0, 0.0, 0.0, 1.0],                    # θ̇ = θ̇  
+        [0.0, mp * g / mc, 0.0, 0.0],            # ẍ = (mp*g/mc) * θ
+        [0.0, g * (mc + mp) / (l * mc), 0.0, 0.0], # θ̈ = (g*(mc+mp)/(l*mc)) * θ
     ], dtype=jnp.float32)
 
-    # Input matrix B (4x1)
+    # Input matrix B (4x1) - control influence
     B = jnp.array([
-        [0.0],
-        [0.0],
-        [1.0 / mc],
-        [1.0 / (l * mc)],
+        [0.0],           # Force doesn't affect position directly
+        [0.0],           # Force doesn't affect angle directly
+        [1.0 / mc],      # Force affects cart acceleration
+        [1.0 / (l * mc)], # Force affects pole angular acceleration
     ], dtype=jnp.float32)
     
     return A, B
 
 
-def _solve_care_iterative(
-    A: jnp.ndarray,
-    B: jnp.ndarray,
-    Q: jnp.ndarray,
-    R: jnp.ndarray,
-    *,
-    iters: int = 100,
-    alpha: float = 1e-3,
-) -> jnp.ndarray:
-    """Solve continuous-time ARE via Kleinman policy iteration with Lyapunov solves.
-
-    This approach alternates between policy evaluation (solve Lyapunov for P)
-    and policy improvement (update K = R^{-1} B^T P). It is robust for small
-    systems and avoids divergence seen with naive gradient steps.
-    """
-    del alpha  # Unused in this implementation
-
-    def solve_lyapunov(Acl: jnp.ndarray, Qbar: jnp.ndarray) -> jnp.ndarray:
-        """Solve Acl^T P + P Acl + Qbar = 0 via Kronecker linear solve."""
-        n = Acl.shape[0]
-        I = jnp.eye(n, dtype=Acl.dtype)
-        M = jnp.kron(I, Acl.T) + jnp.kron(Acl.T, I)  # (n^2, n^2)
-        b = -Qbar.T.reshape((n * n,))  # vec_col(Qbar) == reshape(Qbar.T, -1)
-        vecP = jnp.linalg.solve(M, b)
-        P = vecP.reshape((n, n)).T
-        # Symmetrise to counter numerical asymmetry
-        return 0.5 * (P + P.T)
-
-    def body(carry, _):
-        K = carry  # (1, n)
-        Acl = A - B @ K
-        Qbar = Q + K.T @ R @ K
-        P = solve_lyapunov(Acl, Qbar)
-        K_new = jnp.linalg.solve(R, B.T @ P)  # (1, n)
-        return K_new, None
-
-    # Start from zero-gain policy
-    if _scipy_care is not None:
-        # Use SciPy to get a good initial K, then iterate in JAX
-        P0_np = _scipy_care(np.array(A), np.array(B), np.array(Q), np.array(R))
-        K0_np = np.linalg.solve(np.array(R), np.array(B).T @ P0_np)  # (1,4)
-        K0 = jnp.array(K0_np, dtype=A.dtype)
-    else:
-        # Heuristic stabilising initial policy: velocity damping
-        K0 = jnp.array([[0.0, 0.0, 10.0, 10.0]], dtype=A.dtype)
-    
-    # Run policy iteration
-    K = K0
-    for _ in range(iters):
-        Acl = A - B @ K
-        Qbar = Q + K.T @ R @ K
-        P = solve_lyapunov(Acl, Qbar)
-        K = jnp.linalg.solve(R, B.T @ P)
-    
-    # Return P corresponding to final policy
-    Acl = A - B @ K
-    Qbar = Q + K.T @ R @ K
-    P_final = solve_lyapunov(Acl, Qbar)
-    return P_final
-
-
 def _lqr_gain(A: jnp.ndarray, B: jnp.ndarray, Q: jnp.ndarray, R: jnp.ndarray) -> jnp.ndarray:
-    """Compute continuous-time LQR gain K, returned as shape (4,)."""
-    P = _solve_care_iterative(A, B, Q, R)
-    # Solve R K = B^T P  ->  K = R^{-1} B^T P (row vector length 4)
-    K_row = jnp.linalg.solve(R, B.T @ P)  # (1, 4)
-    return jnp.squeeze(K_row)
+    """Compute optimal LQR gain K using SciPy's solve_continuous_are."""
+    # Convert to numpy for SciPy compatibility
+    A_np, B_np, Q_np, R_np = map(np.array, [A, B, Q, R])
+    
+    # Solve Algebraic Riccati Equation: A^T P + P A - P B R^(-1) B^T P + Q = 0
+    P = solve_continuous_are(A_np, B_np, Q_np, R_np)
+    
+    # Optimal gain: K = R^(-1) * B^T * P
+    K = np.linalg.solve(R_np, B_np.T @ P)
+    
+    return jnp.array(K, dtype=A.dtype)
 
 
 @dataclass(frozen=True)
 class LQRController(Controller):
-    """Time-invariant LQR controller.
+    """Time-invariant LQR controller with optimal gains."""
 
-    Attributes:
-        K: Row-vector gains for 4-state linearisation, shape (4,).
-    """
-
-    K: jnp.ndarray  # (4,)
+    K: jnp.ndarray  # Shape (4,) - optimal gains for 4-state system
 
     @classmethod
     def from_linearisation(
         cls,
         params: CartPoleParams,
-        Q: jnp.ndarray = jnp.diag(jnp.array([10.0, 10.0, 1.0, 1.0])),
-        R: jnp.ndarray = jnp.array([[0.1]]),
+        Q: jnp.ndarray = None,
+        R: jnp.ndarray = None,
     ) -> "LQRController":
-        """Create LQR controller from physical parameters.
-
-        Args:
-            params: Cart-pole parameters
-            Q: State cost matrix (4x4)
-            R: Control cost matrix (1x1)
-
-        Returns:
-            LQRController with gain K (4,)
-        """
+        """Create LQR controller from system parameters."""
+        # Default cost matrices for balanced performance
+        if Q is None:
+            Q = jnp.diag(jnp.array([20.0, 50.0, 5.0, 5.0]))
+        if R is None:
+            R = jnp.array([[5.0]])
+        
         A, B = _linearise(params)
         K = _lqr_gain(A, B, Q, R)
         return cls(K=K)
 
     def _force(self, state: jnp.ndarray, _t: float) -> jnp.ndarray:
-        """Compute control force for a 4D or 5D state.
-
-        For 5D input, converts to 4D small-angle state before applying u = -K s4.
-        """
-        if state.shape[-1] == 5:
-            s4 = five_to_four(state)
-        else:
-            s4 = state
-        return -jnp.dot(self.K, s4)
+        """Compute control force: u = -K * state."""
+        # Convert 5D state to 4D if needed
+        state_4d = five_to_four(state) if state.shape[-1] == 5 else state
+        
+        # Control law: u = -K * x
+        force = -jnp.dot(self.K, state_4d)
+        return force.reshape(())  # Ensure scalar output
 
 
-# --------------------------------------------------------------------------- #
-# Backward-compatibility helpers                                               #
-# --------------------------------------------------------------------------- #
+# ============================================================================
+# Backward Compatibility Functions
+# ============================================================================
 
 def linearize_cartpole(params) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Legacy wrapper returning (A, B) for given params (tuple or CartPoleParams)."""
+    """Legacy: Return (A, B) matrices for given parameters."""
     if isinstance(params, (tuple, list)):
         mc, mp, l, g = params
         params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
@@ -196,15 +110,12 @@ def linearize_cartpole(params) -> Tuple[jnp.ndarray, jnp.ndarray]:
 
 
 def compute_lqr_gain(A, B, Q, R) -> jnp.ndarray:
-    """Legacy wrapper computing K; returns shape (4,)."""
+    """Legacy: Compute LQR gain K."""
     return _lqr_gain(A, B, Q, R)
 
 
 def create_lqr_controller(params, Q, R) -> Callable[[jnp.ndarray, float], float]:
-    """Legacy factory returning a callable policy(state, t) -> float.
-
-    Accepts params as tuple/list or CartPoleParams. R may be a scalar or (1,1) array.
-    """
+    """Legacy: Create callable policy function."""
     if isinstance(params, (tuple, list)):
         mc, mp, l, g = params
         params = CartPoleParams(mc=mc, mp=mp, l=l, g=g)
@@ -220,23 +131,13 @@ def create_lqr_controller(params, Q, R) -> Callable[[jnp.ndarray, float], float]
     return policy
 
 
-# --------------------------------------------------------------------------- #
-# Defaults via optional configuration                                          #
-# --------------------------------------------------------------------------- #
-_CFG_PATH = Path(__file__).resolve().parents[1] / "config.yaml"
-try:  # pragma: no cover - config is optional
-    if yaml is not None:
-        with _CFG_PATH.open("r") as f:
-            _CFG = yaml.safe_load(f) or {}
-    else:
-        _CFG = {}
-except FileNotFoundError:  # pragma: no cover
-    _CFG = {}
+# ============================================================================
+# Default Configuration
+# ============================================================================
 
-_DEFAULT_PARAMS = CartPoleParams(*_CFG.get("nn_training", {}).get("params_system", [1.0, 0.1, 0.5, 9.81]))
-_LQR = _CFG.get("lqr", {})
-_DEFAULT_Q = jnp.diag(jnp.array(_LQR.get("Q", [50.0, 100.0, 5.0, 20.0])))
-_DEFAULT_R = jnp.array([[float(_LQR.get("R", 0.1))]])
+_DEFAULT_PARAMS = CartPoleParams(mc=1.0, mp=0.1, l=0.5, g=9.81)
+_DEFAULT_Q = jnp.diag(jnp.array([20.0, 50.0, 5.0, 5.0]))
+_DEFAULT_R = jnp.array([[5.0]])
 
-# Instantiate default policy for interactive demos
+# Default policy for interactive demos
 lqr_policy = create_lqr_controller(_DEFAULT_PARAMS, _DEFAULT_Q, _DEFAULT_R)

@@ -1,7 +1,35 @@
-# Disturbance schedule for cart-pole experiments
-# Format: list of {start: float, end: float, value: float}
+# Disturbance Configuration for Cart-Pole Experiments
+# ===================================================
+
+# Disturbance schedule: list of {start: float, end: float, value: float}
+# - start: Time when disturbance begins (seconds)
+# - end: Time when disturbance ends (seconds) 
+# - value: Disturbance force magnitude (Newtons)
+
 disturbances:
+  # Initial disturbance period
   - {start: 0.0, end: 7.0, value: 10.0}
+  
+  # Increased disturbance
   - {start: 7.0, end: 12.0, value: 20.0}
+  
+  # No disturbance period
   - {start: 12.0, end: 17.0, value: 0.0}
+  
+  # Negative disturbance (opposite direction)
   - {start: 17.0, end: 1e6, value: -20.0}
+
+# Alternative disturbance patterns (commented out)
+# Uncomment and modify as needed for different experiments
+
+# # Step disturbance
+# disturbances:
+#   - {start: 5.0, end: 1e6, value: 15.0}
+
+# # Sinusoidal disturbance
+# disturbances:
+#   - {start: 0.0, end: 1e6, value: 0.0}  # Will be overridden by sinusoidal function
+
+# # Impulse disturbance
+# disturbances:
+#   - {start: 0.0, end: 1e6, value: 0.0}  # Will be overridden by impulse function

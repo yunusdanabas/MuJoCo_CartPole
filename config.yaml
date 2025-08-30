@@ -1,30 +1,57 @@
-model_xml: cart_pole_minimal.xml
-sim_duration: 30.0
-time_step: 0.01
-nn_model_path: saved_models/nn_controller.eqx
+# Cart-Pole Control System Configuration
+# =====================================
 
-nn_training:
-  params_system: [1.0, 0.1, 0.5, 9.81]
-  q_weights: [5.0, 20.0, 20.0, 1.0, 0.5]  # Moderate angle penalties
-  cost_weights: [5.0, 1.0, 0.05]  # Emphasize energy, balanced state and control
-  num_epochs: 500  # Longer training for better convergence
-  batch_size: 128  # Larger batch improves gradient estimates
-  t_span: [0.0, 6.0]  # Longer horizon to capture full swing-up
-  t_eval_points: 60  # More evaluation points across the horizon
-  learning_rate: 3e-4  # Conservative learning rate
-  grad_clip: 1.0  # Relaxed clipping
+# Simulation Settings
+simulation:
+  model_xml: cart_pole_minimal.xml
+  duration: 30.0          # Simulation duration (seconds)
+  time_step: 0.01         # Integration time step (seconds)
   
-  # New architecture parameters
-  hidden_dims: [128, 128]  # Larger network for complex dynamics
-  curriculum_learning: true  # Gradually increase difficulty
-  curriculum_stages: 3  # Three-stage curriculum
+# Model Paths
+models:
+  nn_controller: saved_models/nn_controller.eqx
 
+# Neural Network Training Configuration
+nn_training:
+  # System parameters: [mc, mp, l, g]
+  system_params: [1.0, 0.1, 0.5, 9.81]
+  
+  # Cost function weights: [position, angle, velocity, angular_velocity, control]
+  q_weights: [5.0, 20.0, 20.0, 1.0, 0.5]
+  
+  # Training hyperparameters
+  num_epochs: 500
+  batch_size: 128
+  learning_rate: 3e-4
+  grad_clip: 1.0
+  
+  # Time horizon settings
+  t_span: [0.0, 6.0]      # Training horizon (seconds)
+  t_eval_points: 60       # Number of evaluation points
+  
+  # Network architecture
+  hidden_dims: [128, 128] # Hidden layer dimensions
+  
+  # Curriculum learning
+  curriculum_learning: true
+  curriculum_stages: 3
+
+# Linear Controller Training
 linear_training:
-  lr: 1e-4
-  max_iters: 100
+  learning_rate: 1e-4
+  max_iterations: 100
   tolerance: 1e-6
-  w_init: [10.7477045, -0.00142533379, -95.3456802, 13.2174416, -27.8421364]
+  initial_weights: [10.75, -0.001, -95.35, 13.22, -27.84]
 
+# LQR Controller Configuration
 lqr:
-  Q: [50.0, 100.0, 5.0, 20.0]
-  R: 0.1
+  # State cost matrix Q: [position, angle, velocity, angular_velocity]
+  Q: [20.0, 50.0, 5.0, 5.0]
+  
+  # Control cost matrix R
+  R: 5.0
+  
+  # Performance targets
+  min_damping: 0.8
+  max_frequency: 3.0
+  cost_scaling: 1.0
