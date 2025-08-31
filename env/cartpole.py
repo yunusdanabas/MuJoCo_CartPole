@@ -25,10 +25,7 @@ class CartPoleParams:
     g: float = 9.81   # Gravity (m/s²)
 
 
-# ============================================================================
 # Dynamics Cache
-# ============================================================================
-
 _dyn_cache: dict[int, callable] = {}
 
 
@@ -42,10 +39,7 @@ def _get_cached_kernel(params: CartPoleParams):
     return _dyn_cache[key]
 
 
-# ============================================================================
 # Core Dynamics
-# ============================================================================
-
 @partial(jax.jit, static_argnames=("params",))
 def _dynamics_core(
     state: Float[Array, "5"],
@@ -53,17 +47,7 @@ def _dynamics_core(
     *,
     params: CartPoleParams,
 ) -> Float[Array, "5"]:
-    """
-    Cart-pole equations of motion for a single state and scalar force.
-    
-    Args:
-        state: State vector [x, cos(θ), sin(θ), ẋ, θ̇]
-        force: Applied force (N)
-        params: Physical parameters
-        
-    Returns:
-        State derivatives [ẋ, -sin(θ)θ̇, cos(θ)θ̇, ẍ, θ̈]
-    """
+    """Cart-pole equations of motion for a single state and scalar force."""
     x, cos_theta, sin_theta, xdot, thdot = state
     mp, l, g = params.mp, params.l, params.g
 
@@ -74,17 +58,14 @@ def _dynamics_core(
     xddot = m11 * rhs1 + m12 * rhs2
     thddot = m12 * rhs1 + m22 * rhs2
 
-    # Trigonometric derivatives: d/dt[cos(θ)] = -sin(θ)θ̇, d/dt[sin(θ)] = cos(θ)θ̇
+    # Trigonometric derivatives
     cos_theta_dot = -sin_theta * thdot
     sin_theta_dot = cos_theta * thdot
 
     return jnp.array([xdot, cos_theta_dot, sin_theta_dot, xddot, thddot])
 
 
-# ============================================================================
 # Vectorized Dynamics
-# ============================================================================
-
 @partial(jax.jit, static_argnames=("params",))
 def _dynamics_batched(
     states: Float[Array, "batch 5"],
@@ -102,18 +83,7 @@ def dynamics(
     params: CartPoleParams = CartPoleParams(),
     controller=lambda s, t: 0.0,
 ) -> Float[Array, "... 5"]:
-    """
-    Compute cart-pole dynamics derivatives.
-
-    Args:
-        state: State vector(s) [x, cos(θ), sin(θ), ẋ, θ̇]
-        t: Time
-        params: Physical parameters
-        controller: Control function (state, time) -> force
-
-    Returns:
-        State derivatives [ẋ, -sin(θ)θ̇, cos(θ)θ̇, ẍ, θ̈]
-    """
+    """Compute cart-pole dynamics derivatives."""
     if state.shape[-1] != 5:
         raise ValueError(f"Expected state format [x, cos(θ), sin(θ), ẋ, θ̇], got shape {state.shape}")
 
