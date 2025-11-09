@@ -112,28 +112,6 @@ pytest tests/
 - **Energy-Based Loss** - Specialized for swing-up tasks
 - **Modular Design** - Clean separation of concerns
 - **Full Test Coverage** - Comprehensive testing suite
-
-## 📚 Documentation
-
-- **Project Report**: `ProjectReport.pdf` - Complete methodology and results
-- **Code Examples**: `examples/` directory for learning
-- **Configuration**: `config.yaml` for parameter tuning
-
-## 🔮 Future Work
-
-- Controller handoff (NN → LQR) for optimal performance
-- Enhanced cost functions with phase-aware terms
-- Robustness testing under various disturbances
-- Real-time performance optimization
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
 ---
 
 **Built with**: JAX, MuJoCo, Equinox, Optax, Diffrax
