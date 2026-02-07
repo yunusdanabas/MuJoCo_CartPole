@@ -2,116 +2,86 @@
 
 A JAX-based implementation of cart-pole swing-up control using classical control methods and neural networks. Train controllers via differentiable simulation and deploy them in high-fidelity MuJoCo environments.
 
-## 🎯 What It Does
+## What It Does
 
-The cart-pole system has a cart moving horizontally with a pole attached that can swing freely. The goal is to design controllers that can:
+The cart-pole system has a cart moving horizontally with a pole attached that can swing freely. Controllers are designed to:
+- Swing up the pole from hanging position to upright
+- Stabilize around the upright equilibrium
+- Keep the cart near the center (x = 0)
 
-1. **Swing up** the pole from hanging position to upright
-2. **Stabilize** the system around the upright equilibrium
-3. **Keep the cart** near the center (x = 0)
+## Control Approaches
 
-## 🚀 Three Control Approaches
+- **Linear** – PD control with quadratic cost, simple stabilization
+- **LQR** – Linear-quadratic regulator, optimal linear control
+- **Neural Network** – MLP trained via differentiable simulation, energy-based swing-up
 
-| Controller | Method | Purpose |
-|------------|---------|---------|
-| **Linear** | PD control with quadratic cost | Simple stabilization |
-| **LQR** | Linear-quadratic regulator | Optimal linear control |
-| **Neural Network** | MLP trained via differentiable simulation | Energy-based swing-up |
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 MuJoCo_CartPole/
 ├── controller/          # Control algorithms
-├── env/                # Cart-pole dynamics & simulation
-├── lib/                # Training, utilities, visualization
-├── examples/           # Quick start demonstrations
-├── scripts/            # MuJoCo simulation scripts
-├── tests/              # Comprehensive test suite
-└── config.yaml         # Configuration & parameters
+├── env/                 # Cart-pole dynamics & simulation
+├── lib/                 # Training, utilities, visualization
+├── examples/            # Quick start demonstrations
+├── scripts/             # MuJoCo simulation scripts
+├── tests/               # Test suite
+└── config.yaml          # Configuration & parameters
 ```
 
-## 🛠️ Installation
+## Installation
 
 ```bash
 pip install jax jaxlib equinox optax diffrax mujoco matplotlib numpy mujoco-python-viewer
 ```
 
-**Note**: Ensure MuJoCo is properly installed and licensed on your system.
+Ensure MuJoCo is properly installed on your system.
 
-## 🎮 Quick Start
+## Quick Start
 
-### Run Examples
+Run examples:
 ```bash
-# Individual controllers
-python examples/linear.py      # Linear PD control
-python examples/lqr.py         # LQR control
-python examples/nn.py          # Neural network control
-
-# Compare all three
+python examples/linear.py
+python examples/lqr.py
+python examples/nn.py
 python examples/combo_linear_lqr_nn.py
 ```
 
-### Train Neural Network
+Train the neural network controller:
 ```bash
 python scripts/train_nn_controller.py
 ```
 
-### MuJoCo Simulation
+MuJoCo simulation:
 ```bash
-# Linear controller in MuJoCo
-python scripts/mujoco_linear_control.py
-
-# LQR controller in MuJoCo  
+python scripts/linear_mujoco.py
 python scripts/lqr_mujoco.py
-
-# Neural network in MuJoCo
 python scripts/nn_mujoco.py
 ```
 
-## 🔧 Configuration
+## Configuration
 
-Edit `config.yaml` to adjust:
-- Training parameters (epochs, batch size, learning rate)
-- System parameters (masses, lengths, gravity)
-- Cost function weights
-- Time horizons
+Edit `config.yaml` to adjust training parameters, system parameters, cost weights, and time horizons.
 
-## 🧪 Testing
+## Testing
 
 ```bash
-# Run all tests
 ./scripts/run_tests.sh
-
-# Or use pytest directly
+# or
 pytest tests/
 ```
 
-## 🔬 How It Works
+## How It Works
 
-### 1. Differentiable Simulation
-- Uses **Diffrax** for ODE integration
-- **JAX** provides automatic differentiation
-- Train controllers by minimizing cost over trajectories
+- **Differentiable Simulation** – Diffrax for ODE integration, JAX for automatic differentiation; controllers trained by minimizing cost over trajectories
+- **Neural Network** – 5D state input `[x, cosθ, sinθ, ẋ, θ̇]`, control force output, energy-based loss, Adam optimizer
+- **MuJoCo Deployment** – High-fidelity physics, real-time visualization, interactive controls
 
-### 2. Neural Network Training
-- **Input**: 5D state `[x, cosθ, sinθ, ẋ, θ̇]`
-- **Output**: Control force
-- **Loss**: Energy-based + position penalty
-- **Optimizer**: Adam via Optax
+## Key Features
 
-### 3. MuJoCo Deployment
-- High-fidelity physics simulation
-- Real-time visualization
-- Interactive controls and disturbance testing
+- JIT compilation for fast execution
+- Batch processing for efficient training
+- Energy-based loss for swing-up tasks
+- Modular design
+- Full test coverage
 
-## 📊 Key Features
-
-- **JIT Compilation** - Fast execution with JAX
-- **Batch Processing** - Efficient training and evaluation
-- **Energy-Based Loss** - Specialized for swing-up tasks
-- **Modular Design** - Clean separation of concerns
-- **Full Test Coverage** - Comprehensive testing suite
----
-
-**Built with**: JAX, MuJoCo, Equinox, Optax, Diffrax
+Built with JAX, MuJoCo, Equinox, Optax, Diffrax

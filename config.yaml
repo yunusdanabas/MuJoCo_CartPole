@@ -8,6 +8,7 @@ simulation:
   time_step: 0.01         # Integration time step (seconds)
   
 # Model Paths
+nn_model_path: saved_models/nn_controller.eqx
 models:
   nn_controller: saved_models/nn_controller.eqx
 

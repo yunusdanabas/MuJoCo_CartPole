@@ -37,3 +37,12 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Generated results and outputs
+results/
+plots/
+saved_models/
+
+# Cached/trained artifacts
+*.pkl
+*.eqx
